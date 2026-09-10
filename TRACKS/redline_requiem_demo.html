@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REDLINE REQUIEM — Project Garage Race Theme (Demo)</title>
+<style>
+  :root{
+    --bg:#0c0d0a; --panel:#1c1e18; --line:#3a3d33; --text:#d9d6c8; --dim:#8a8a78; --amber:#f2b705; --good:#6fae4a;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at 30% -10%, #23261a 0%, #0c0d0a 60%);
+    color:var(--text); font-family:'Consolas','Courier New',monospace; padding:20px;
+  }
+  #frame{
+    width:640px; max-width:100%; background:var(--panel); border:1px solid var(--line);
+    box-shadow:0 0 0 1px #000, 0 20px 50px rgba(0,0,0,.6);
+  }
+  #top{
+    padding:16px 20px; border-bottom:2px solid var(--amber);
+    background:linear-gradient(180deg,#24261d,#1a1c16);
+  }
+  #top .title{ color:var(--amber); font-weight:bold; letter-spacing:2px; font-size:16px; }
+  #top .sub{ color:var(--dim); font-size:10px; letter-spacing:2px; margin-top:2px; }
+  #body{ padding:22px; }
+  #vizWrap{
+    background:#0d0e0a; border:1px solid var(--line); height:130px; margin-bottom:16px;
+    display:flex; align-items:flex-end; gap:3px; padding:8px; overflow:hidden;
+  }
+  #vizWrap div{ flex:1; background:var(--amber); min-height:2px; transition:height .05s linear; }
+  #statusRow{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  #sectionLabel{ color:var(--amber); font-size:13px; letter-spacing:2px; font-weight:bold; }
+  #timeLabel{ color:var(--dim); font-size:11px; }
+  #barTrack{ background:#0d0e0a; border:1px solid var(--line); height:6px; margin-bottom:20px; }
+  #barFill{ background:var(--amber); height:100%; width:0%; }
+  #controls{ display:flex; gap:10px; align-items:center; }
+  button{
+    background:#242620; border:1px solid var(--line); color:var(--text); padding:10px 20px;
+    font-family:inherit; font-size:12px; letter-spacing:1px; cursor:pointer;
+  }
+  button:hover{ border-color:var(--amber); color:var(--amber); }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+  #volRow{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+  #volRow span{ color:var(--dim); font-size:10px; letter-spacing:1px; }
+  input[type=range]{ accent-color:var(--amber); }
+  #noteBox{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); color:var(--dim); font-size:10.5px; line-height:1.5; }
+  #noteBox b{ color:var(--text); }
+</style>
+</head>
+<body>
+<div id="frame">
+  <div id="top">
+    <div class="title">REDLINE REQUIEM</div>
+    <div class="sub">ORIGINAL COMPOSITION — PROJECT GARAGE RACE THEME — 172 BPM — A MINOR</div>
+  </div>
+  <div id="body">
+    <div id="vizWrap"></div>
+    <div id="statusRow">
+      <span id="sectionLabel">READY</span>
+      <span id="timeLabel">0:00 / 1:46</span>
+    </div>
+    <div id="barTrack"><div id="barFill"></div></div>
+    <div id="controls">
+      <button id="playBtn">▶ PLAY</button>
+      <button id="stopBtn" disabled>■ STOP</button>
+      <div id="volRow">
+        <span>VOL</span>
+        <input type="range" id="volSlider" min="0" max="100" value="70">
+      </div>
+    </div>
+    <div id="noteBox">
+      <b>All synthesized live in your browser</b> via the Web Audio API — no audio files, fully original.
+      Structure: Intro → Verse → Build → Drop → Breakdown → Final Chorus (key change) → Outro.
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   REDLINE REQUIEM — original Eurobeat-style composition
+   Synthesized entirely with oscillators/noise via Web Audio.
+========================================================= */
+const BPM = 172;
+const BEATS_PER_BAR = 4;
+const STEPS_PER_BEAT = 4; // 16th-note grid
+const STEPS_PER_BAR = BEATS_PER_BAR * STEPS_PER_BEAT;
+
+// Song structure: [name, bars]
+const SECTIONS = [
+  { name:'INTRO',         bars:8  },
+  { name:'VERSE',         bars:16 },
+  { name:'BUILD',         bars:8  },
+  { name:'DROP',          bars:16 },
+  { name:'BREAKDOWN',     bars:8  },
+  { name:'FINAL CHORUS',  bars:16, transpose:2 }, // whole-step key change up
+  { name:'OUTRO',         bars:4  },
+];
+const TOTAL_BARS = SECTIONS.reduce((a,s)=>a+s.bars,0);
+const TOTAL_STEPS = TOTAL_BARS * STEPS_PER_BAR;
+
+// Precompute section boundaries in bars
+let cursor = 0;
+SECTIONS.forEach(s=>{ s.startBar = cursor; cursor += s.bars; s.endBar = cursor; });
+function sectionForBar(bar){
+  return SECTIONS.find(s=> bar >= s.startBar && bar < s.endBar) || SECTIONS[SECTIONS.length-1];
+}
+
+// A natural minor scale degrees, semitone offsets from root A
+const SCALE = { 1:0, 2:2, b3:3, 4:5, 5:7, b6:8, b7:10, oct:12 };
+const ROOT_BASS = 110;   // A2
+const ROOT_LEAD = 220;   // A3
+function freq(root, semis){ return root * Math.pow(2, semis/12); }
+
+// Hook motif: 1–5–b7–1 / 5–b3–1–5 (8 eighth-notes across one bar)
+const HOOK = [SCALE[1], SCALE[5], SCALE.b7, SCALE.oct, SCALE[5], SCALE.b3, SCALE[1], SCALE[5]];
+// Bass arpeggio: 1–b3–5–1 (16th notes, repeated 4x per bar)
+const BASS_ARP = [SCALE[1], SCALE.b3, SCALE[5], SCALE[1]];
+
+let ctx = null, masterGain = null, analyser = null;
+let playing = false;
+let nextStepTime = 0;
+let currentStep = 0;
+let schedulerTimer = null;
+const SCHEDULE_AHEAD = 0.12;
+const LOOKAHEAD_MS = 25;
+let stepDuration = (60/BPM)/STEPS_PER_BEAT;
+
+function initAudio(){
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = ctx.createGain();
+  masterGain.gain.value = (document.getElementById('volSlider').value/100) * 0.9;
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 64;
+  masterGain.connect(analyser);
+  analyser.connect(ctx.destination);
+}
+
+/* ---------------- Voices ---------------- */
+function noiseBuffer(dur){
+  const buf = ctx.createBuffer(1, ctx.sampleRate*dur, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<data.length;i++) data[i] = Math.random()*2-1;
+  return buf;
+}
+
+function playKick(time){
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150, time);
+  osc.frequency.exponentialRampToValueAtTime(48, time+0.12);
+  gain.gain.setValueAtTime(0.9, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time+0.28);
+  osc.connect(gain); gain.connect(masterGain);
+  osc.start(time); osc.stop(time+0.3);
+}
+
+function playHat(time, open){
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(open?0.22:0.06);
+  const hp = ctx.createBiquadFilter();
+  hp.type='highpass'; hp.frequency.value = 7000;
+  const gain = ctx.createGain();
+  const dur = open?0.18:0.045;
+  gain.gain.setValueAtTime(open?0.28:0.22, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time+dur);
+  src.connect(hp); hp.connect(gain); gain.connect(masterGain);
+  src.start(time); src.stop(time+dur+0.02);
+}
+
+function playSnare(time, gateVerb){
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(0.2);
+  const bp = ctx.createBiquadFilter();
+  bp.type='bandpass'; bp.frequency.value = 1800; bp.Q.value=0.9;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.5, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time+0.16);
+  src.connect(bp); bp.connect(gain); gain.connect(masterGain);
+  src.start(time); src.stop(time+0.18);
+
+  const tone = ctx.createOscillator();
+  const toneGain = ctx.createGain();
+  tone.type='triangle'; tone.frequency.value = 190;
+  toneGain.gain.setValueAtTime(0.25, time);
+  toneGain.gain.exponentialRampToValueAtTime(0.001, time+0.1);
+  tone.connect(toneGain); toneGain.connect(masterGain);
+  tone.start(time); tone.stop(time+0.12);
+
+  // fake "gated reverb" tail: a couple of quick decaying echoes, cut off abruptly
+  if(gateVerb){
+    [0.03, 0.06].forEach((delay, i)=>{
+      const s2 = ctx.createBufferSource();
+      s2.buffer = noiseBuffer(0.1);
+      const bp2 = ctx.createBiquadFilter();
+      bp2.type='bandpass'; bp2.frequency.value = 1400;
+      const g2 = ctx.createGain();
+      const vol = 0.16/(i+2);
+      g2.gain.setValueAtTime(vol, time+delay);
+      g2.gain.setValueAtTime(vol, time+delay+0.05);
+      g2.gain.linearRampToValueAtTime(0.0001, time+delay+0.06); // abrupt gate cutoff
+      s2.connect(bp2); bp2.connect(g2); g2.connect(masterGain);
+      s2.start(time+delay); s2.stop(time+delay+0.07);
+    });
+  }
+}
+
+function playBassNote(time, semis, dur, transpose){
+  const f = freq(ROOT_BASS, semis + (transpose||0));
+  const osc = ctx.createOscillator();
+  const filt = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  osc.type='sawtooth'; osc.frequency.value = f;
+  filt.type='lowpass'; filt.frequency.setValueAtTime(1200, time);
+  filt.frequency.exponentialRampToValueAtTime(220, time+dur*0.8);
+  gain.gain.setValueAtTime(0.0001, time);
+  gain.gain.linearRampToValueAtTime(0.55, time+0.006);
+  gain.gain.exponentialRampToValueAtTime(0.001, time+dur*0.9);
+  osc.connect(filt); filt.connect(gain); gain.connect(masterGain);
+  osc.start(time); osc.stop(time+dur);
+}
+
+// Lead voice: a simple "supersaw" (3 detuned sawtooths through a shared filter/envelope)
+function playLead(time, semis, dur, transpose, vol){
+  const f = freq(ROOT_LEAD, semis + (transpose||0));
+  const g = ctx.createGain();
+  const filt = ctx.createBiquadFilter();
+  filt.type='lowpass'; filt.frequency.value = 5200;
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.linearRampToValueAtTime(vol!==undefined?vol:0.32, time+0.012);
+  g.gain.exponentialRampToValueAtTime(0.001, time+dur*0.95);
+  filt.connect(g); g.connect(masterGain);
+  const detunes = [-8,0,8];
+  const oscs = detunes.map(cents=>{
+    const osc = ctx.createOscillator();
+    osc.type='sawtooth';
+    osc.frequency.value = f * Math.pow(2, cents/1200);
+    osc.connect(filt);
+    return osc;
+  });
+  oscs.forEach(o=>{ o.start(time); o.stop(time+dur); });
+}
+
+function playStab(time, semisArr, dur, transpose){
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.linearRampToValueAtTime(0.3, time+0.008);
+  g.gain.exponentialRampToValueAtTime(0.001, time+dur);
+  g.connect(masterGain);
+  semisArr.forEach(s=>{
+    const osc = ctx.createOscillator();
+    osc.type='square';
+    osc.frequency.value = freq(ROOT_LEAD/2, s + (transpose||0));
+    osc.connect(g);
+    osc.start(time); osc.stop(time+dur);
+  });
+}
+
+function playSparkle(time, semis, dur, transpose){
+  const f = freq(ROOT_LEAD*2, semis + (transpose||0));
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type='triangle'; osc.frequency.value = f;
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.linearRampToValueAtTime(0.14, time+0.004);
+  g.gain.exponentialRampToValueAtTime(0.001, time+dur*0.8);
+  osc.connect(g); g.connect(masterGain);
+  osc.start(time); osc.stop(time+dur);
+}
+
+function playRiserTick(time, prog){
+  // short filtered-noise tick used to build the intro riser, prog 0..1
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(0.08);
+  const bp = ctx.createBiquadFilter();
+  bp.type='bandpass';
+  bp.frequency.value = 400 + prog*5000;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.08 + prog*0.15, time);
+  g.gain.exponentialRampToValueAtTime(0.001, time+0.08);
+  src.connect(bp); bp.connect(g); g.connect(masterGain);
+  src.start(time); src.stop(time+0.09);
+}
+
+function playPadChord(time, dur, transpose){
+  const g = ctx.createGain();
+  const filt = ctx.createBiquadFilter();
+  filt.type='lowpass'; filt.frequency.setValueAtTime(400, time);
+  filt.frequency.linearRampToValueAtTime(1800, time+dur*0.7);
+  g.gain.setValueAtTime(0.0001, time);
+  g.gain.linearRampToValueAtTime(0.22, time+dur*0.3);
+  g.gain.linearRampToValueAtTime(0.0001, time+dur);
+  g.connect(masterGain); filt.connect(g);
+  [SCALE[1], SCALE.b3, SCALE[5]].forEach(s=>{
+    const osc = ctx.createOscillator();
+    osc.type='sawtooth';
+    osc.frequency.value = freq(ROOT_BASS, s + (transpose||0));
+    osc.connect(filt);
+    osc.start(time); osc.stop(time+dur);
+  });
+}
+
+/* ---------------- Pattern logic per section ---------------- */
+function scheduleStep(globalStep, time){
+  const bar = Math.floor(globalStep / STEPS_PER_BAR);
+  const stepInBar = globalStep % STEPS_PER_BAR;
+  const section = sectionForBar(bar);
+  const barInSection = bar - section.startBar;
+  const transpose = section.transpose || 0;
+
+  switch(section.name){
+    case 'INTRO': {
+      if(barInSection === 0 && stepInBar === 0) playPadChord(time, 1.4*8*stepDuration*4/8, transpose);
+      const prog = (barInSection*STEPS_PER_BAR + stepInBar) / (8*STEPS_PER_BAR);
+      if(stepInBar % 4 === 0) playRiserTick(time, prog);
+      if(barInSection >= 4 && stepInBar % 4 === 0) playKick(time); // kick enters bar 5
+      if(barInSection >= 6 && stepInBar % 2 === 0) playHat(time, false);
+      break;
+    }
+    case 'VERSE': {
+      if(stepInBar % 4 === 0) playKick(time);
+      if(stepInBar % 4 === 2) playHat(time, true); else if(stepInBar%2===0) playHat(time,false);
+      if(stepInBar % 4 === 0 || stepInBar % 4 === 2){
+        const idx = (stepInBar/2) % BASS_ARP.length;
+        playBassNote(time, BASS_ARP[idx], stepDuration*1.9, transpose);
+      }
+      // sparse lead teasing the hook, every other bar, on the 8th-note grid
+      if(barInSection % 2 === 1 && stepInBar % 2 === 0){
+        const idx = (stepInBar/2) % HOOK.length;
+        playLead(time, HOOK[idx], stepDuration*1.8, transpose, 0.14);
+      }
+      break;
+    }
+    case 'BUILD': {
+      if(stepInBar % 4 === 0 && barInSection < 7) playKick(time);
+      if(stepInBar % 4 === 0 || stepInBar % 4 === 2){
+        const idx = (stepInBar/2) % BASS_ARP.length;
+        playBassNote(time, BASS_ARP[idx], stepDuration*1.9, transpose);
+      }
+      // snare roll: density increases with barInSection
+      const isLastBar = barInSection === section.bars-1;
+      const silenceStep = STEPS_PER_BAR-4; // last beat silent before the drop
+      if(isLastBar && stepInBar >= silenceStep){
+        // silence + rising stab right before the drop
+        if(stepInBar === silenceStep){
+          playStab(time, [SCALE.oct+12], stepDuration*3.5, transpose);
+        }
+        break;
+      }
+      let hitEvery;
+      if(barInSection < 2) hitEvery = 4;
+      else if(barInSection < 4) hitEvery = 2;
+      else if(barInSection < 6) hitEvery = 1;
+      else hitEvery = 1;
+      if(stepInBar % hitEvery === 0) playSnare(time, false);
+      break;
+    }
+    case 'DROP': {
+      if(stepInBar % 4 === 0) playKick(time);
+      if(stepInBar % 4 === 2) playSnare(time, true);
+      // galloping hats: syncopated pattern within the 16-step bar
+      const gallopPattern = [1,0,0,1,0,0,1,0,1,0,0,1,0,0,1,0];
+      if(gallopPattern[stepInBar]) playHat(time, false);
+      // bass locked to the kick (root on the beat)
+      if(stepInBar % 4 === 0) playBassNote(time, SCALE[1], stepDuration*3.6, transpose);
+      // full lead hook, doubled, on the 8th-note grid
+      if(stepInBar % 2 === 0){
+        const idx = (stepInBar/2) % HOOK.length;
+        playLead(time, HOOK[idx], stepDuration*1.9, transpose, 0.34);
+      }
+      // power-chord stabs on the off-beats
+      if(stepInBar % 4 === 2){
+        playStab(time, [SCALE[1], SCALE[5], SCALE.oct], stepDuration*1.6, transpose);
+      }
+      break;
+    }
+    case 'BREAKDOWN': {
+      // stripped back: arpeggio + pitched stutter synth, no kick/snare
+      if(stepInBar % 2 === 0){
+        const idx = (stepInBar/2) % BASS_ARP.length;
+        playBassNote(time, BASS_ARP[idx], stepDuration*1.6, transpose);
+      }
+      // pitched vocal-chop-style stutter: rapid gated notes on a fixed pitch
+      if(stepInBar % 1 === 0 && stepInBar % 4 !== 3){
+        playSparkle(time, SCALE[5]+12, stepDuration*0.7, transpose);
+      }
+      if(barInSection >= 6 && stepInBar % 4 === 0) playHat(time, false);
+      break;
+    }
+    case 'FINAL CHORUS': {
+      if(stepInBar % 4 === 0) playKick(time);
+      if(stepInBar % 4 === 2) playSnare(time, true);
+      const gallopPattern = [1,0,0,1,0,0,1,0,1,0,0,1,0,0,1,0];
+      if(gallopPattern[stepInBar]) playHat(time, false);
+      if(stepInBar % 4 === 0) playBassNote(time, SCALE[1], stepDuration*3.6, transpose);
+      if(stepInBar % 2 === 0){
+        const idx = (stepInBar/2) % HOOK.length;
+        playLead(time, HOOK[idx], stepDuration*1.9, transpose, 0.38);
+        playSparkle(time, HOOK[idx]+12, stepDuration*1.6, transpose);
+      }
+      if(stepInBar % 4 === 2){
+        playStab(time, [SCALE[1], SCALE[5], SCALE.oct], stepDuration*1.6, transpose);
+      }
+      break;
+    }
+    case 'OUTRO': {
+      if(barInSection === 0 && stepInBar % 4 === 0) playKick(time);
+      if(barInSection === 0 && stepInBar % 4 === 0){
+        const idx = (stepInBar/4) % BASS_ARP.length;
+        playBassNote(time, BASS_ARP[idx], stepDuration*3.6, transpose);
+      }
+      if(barInSection === section.bars-1 && stepInBar === 0){
+        playPadChord(time, stepDuration*STEPS_PER_BAR*1.3, transpose);
+      }
+      break;
+    }
+  }
+}
+
+/* ---------------- Scheduler (lookahead pattern) ---------------- */
+function scheduler(){
+  while(nextStepTime < ctx.currentTime + SCHEDULE_AHEAD){
+    if(currentStep >= TOTAL_STEPS){
+      stopPlayback(true);
+      return;
+    }
+    scheduleStep(currentStep, nextStepTime);
+    nextStepTime += stepDuration;
+    currentStep++;
+  }
+}
+
+function startPlayback(){
+  if(!ctx) initAudio();
+  ctx.resume();
+  currentStep = 0;
+  nextStepTime = ctx.currentTime + 0.08;
+  playing = true;
+  schedulerTimer = setInterval(scheduler, LOOKAHEAD_MS);
+  document.getElementById('playBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+  requestAnimationFrame(updateUI);
+  requestAnimationFrame(drawViz);
+}
+
+function stopPlayback(natural){
+  playing = false;
+  clearInterval(schedulerTimer);
+  document.getElementById('playBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('sectionLabel').textContent = natural ? 'DONE — PRESS PLAY TO REPLAY' : 'STOPPED';
+  document.getElementById('barFill').style.width = natural ? '100%' : document.getElementById('barFill').style.width;
+}
+
+/* ---------------- UI ---------------- */
+const vizWrap = document.getElementById('vizWrap');
+const BAR_COUNT = 40;
+for(let i=0;i<BAR_COUNT;i++){ const d=document.createElement('div'); d.style.height='2px'; vizWrap.appendChild(d); }
+const vizBars = vizWrap.children;
+
+function drawViz(){
+  if(!playing) { return; }
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+  for(let i=0;i<BAR_COUNT;i++){
+    const v = data[Math.floor(i * data.length / BAR_COUNT)] || 0;
+    vizBars[i].style.height = Math.max(2, (v/255)*120) + 'px';
+  }
+  requestAnimationFrame(drawViz);
+}
+
+function formatTime(sec){
+  const m = Math.floor(sec/60), s = Math.floor(sec%60);
+  return m+':'+String(s).padStart(2,'0');
+}
+
+function updateUI(){
+  if(!playing) return;
+  const elapsedSteps = currentStep;
+  const bar = Math.floor(elapsedSteps / STEPS_PER_BAR);
+  const section = sectionForBar(Math.min(bar, TOTAL_BARS-1));
+  document.getElementById('sectionLabel').textContent = section.name + (section.transpose ? ' (KEY CHANGE)' : '');
+  const elapsedSec = elapsedSteps * stepDuration;
+  const totalSec = TOTAL_STEPS * stepDuration;
+  document.getElementById('timeLabel').textContent = formatTime(elapsedSec)+' / '+formatTime(totalSec);
+  document.getElementById('barFill').style.width = Math.min(100, (elapsedSteps/TOTAL_STEPS)*100)+'%';
+  requestAnimationFrame(updateUI);
+}
+
+document.getElementById('playBtn').addEventListener('click', startPlayback);
+document.getElementById('stopBtn').addEventListener('click', ()=>stopPlayback(false));
+document.getElementById('volSlider').addEventListener('input', (e)=>{
+  if(masterGain) masterGain.gain.value = (e.target.value/100)*0.9;
+});
+
+// Set total time label immediately
+document.getElementById('timeLabel').textContent = '0:00 / ' + formatTime(TOTAL_STEPS*stepDuration);
+</script>
+</body>
+</html>
