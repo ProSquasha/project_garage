@@ -601,12 +601,6 @@
 
   /* race screen */
   #raceScreen{ position:relative; }
-  .raceTrackWrap{
-    position:relative; width:100%; max-width:1200px; margin:0 auto 14px auto;
-    height:150px; background:linear-gradient(180deg,#1a1d14,#0d0e0a); border:1px solid var(--line);
-    overflow:hidden; image-rendering:pixelated;
-  }
-  #raceTrackCanvas{ width:100%; height:100%; display:block; image-rendering:pixelated; }
   .raceHud{
     display:flex; justify-content:space-between; align-items:center; max-width:1200px; margin:0 auto 10px auto;
     font-size:12px; color:var(--dim); letter-spacing:0.5px;
@@ -614,8 +608,8 @@
   .raceHud .hudCombo{ color:var(--amber); font-weight:bold; }
   .raceHud .hudAcc{ color:var(--good); }
   .raceHighwayWrap{
-    position:relative; width:100%; max-width:560px; margin:0 auto; background:#0d0e0a;
-    border:1px solid var(--line); height:420px; overflow:hidden;
+    position:relative; width:100%; max-width:700px; margin:0 auto; background:#0d0e0a;
+    border:1px solid var(--line); height:560px; overflow:hidden;
   }
   #raceNoteCanvas{ width:100%; height:100%; display:block; }
   .raceCountdownOverlay{
@@ -633,7 +627,61 @@
   .raceResultOverlay .rrLine{ color:var(--text); font-size:13px; margin-bottom:6px; }
   .raceResultOverlay .rrLine b{ color:var(--amber); }
   .raceControlsHint{ text-align:center; color:var(--dim); font-size:10.5px; margin-top:10px; letter-spacing:0.5px; }
+
+  /* --- HEADS-UP LOBBY (multiplayer) --- */
+  .mpBox{ max-width:520px; margin:0 auto; text-align:center; padding:10px 0; }
+  .mpBox h3{ color:var(--amber); font-size:15px; letter-spacing:1px; margin-bottom:10px; }
+  .mpCodeDisplay{
+    font-size:34px; font-weight:bold; letter-spacing:8px; color:var(--amber);
+    background:#0d0e0a; border:1px solid var(--line); padding:16px; margin:14px 0;
+  }
+  .mpJoinRow{ display:flex; gap:8px; margin-top:10px; }
+  .mpJoinRow input{
+    flex:1; background:#1a1c15; border:1px solid var(--line); color:var(--text);
+    padding:10px; font-family:inherit; font-size:16px; letter-spacing:4px; text-align:center; text-transform:uppercase;
+  }
+  .mpJoinRow input:focus{ outline:none; border-color:var(--amber); }
+  .mpDivider{ color:var(--dim); font-size:10px; letter-spacing:2px; margin:20px 0; }
+  .mpPlayerRow{
+    display:flex; justify-content:space-between; align-items:center; background:#191a15;
+    border:1px solid var(--line); padding:14px; margin-bottom:10px; text-align:left;
+  }
+  .mpPlayerRow.ready{ border-color: var(--good); }
+  .mpPlayerRow .mpName{ font-weight:bold; font-size:13px; }
+  .mpPlayerRow .mpStatus{ font-size:11px; color:var(--dim); }
+  .mpPlayerRow .mpStatus.ready{ color:var(--good); }
+  .mpBetRow{ display:flex; align-items:center; gap:10px; justify-content:center; margin:16px 0; }
+  .mpBetRow input{
+    width:120px; background:#1a1c15; border:1px solid var(--line); color:var(--text);
+    padding:9px; font-family:inherit; font-size:14px; text-align:center;
+  }
+  .mpBetRow input:focus{ outline:none; border-color:var(--amber); }
+  .mpWaitingNote{ color:var(--dim); font-size:11px; margin-top:8px; }
+  .mpNote{ color:var(--dim); font-size:10.5px; margin-top:20px; line-height:1.5; border-top:1px solid var(--line); padding-top:14px; }
+
+  /* --- AUDIO PLAYER --- */
+  .apVizWrap{ background:#0d0e0a; border:1px solid var(--line); margin-bottom:14px; padding:6px; }
+  #apVizCanvas{ width:100%; height:90px; display:block; }
+  .apNowPlaying{ color:var(--dim); font-size:12px; margin-bottom:16px; display:flex; align-items:center; gap:10px; }
+  .apNowPlaying b{ color:var(--amber); }
+  .apTrackList{ display:flex; flex-direction:column; gap:8px; }
+  .apTrackRow{
+    display:flex; justify-content:space-between; align-items:center; background:#191a15;
+    border:1px solid var(--line); padding:12px 14px;
+  }
+  .apTrackRow.locked{ opacity:.6; }
+  .apTrackName{ font-weight:bold; font-size:13px; }
+  .apTrackSub{ color:var(--dim); font-size:10.5px; margin-top:2px; }
+  .apLocked{ color:var(--racegreen); font-size:11px; letter-spacing:0.5px; }
+
+  /* --- Race screen bar visualizer --- */
+  .raceVizWrap{
+    max-width:1200px; margin:10px auto 0 auto; background:#0d0e0a; border:1px solid var(--line); padding:6px;
+  }
+  #raceVizCanvas{ width:100%; height:60px; display:block; }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -653,6 +701,7 @@
       <button class="navbtn" data-tab="market">MARKET</button>
       <button class="navbtn" data-tab="garage">GARAGE</button>
       <button class="navbtn" data-tab="race">RACE</button>
+      <button class="navbtn" data-tab="audio">AUDIO PLAYER</button>
     </div>
 
     <div id="content"></div>
@@ -729,6 +778,28 @@
 <div id="toast"></div>
 
 <script>
+/* ---------------------------------------------------------
+   FIREBASE — backs the Heads-Up Lobby's cross-device sync.
+   This is the only part of the game that talks to the internet;
+   everything else stays fully local.
+--------------------------------------------------------- */
+const firebaseConfig = {
+  apiKey: "AIzaSyDP9rz2C2bTdad7LeyNvjr2QqQ9FwiOVy0",
+  authDomain: "project-garage-e2371.firebaseapp.com",
+  databaseURL: "https://project-garage-e2371-default-rtdb.firebaseio.com",
+  projectId: "project-garage-e2371",
+  storageBucket: "project-garage-e2371.firebasestorage.app",
+  messagingSenderId: "497815232259",
+  appId: "1:497815232259:web:2304fb7a09356871261336",
+};
+let mpDb = null;
+try{
+  firebase.initializeApp(firebaseConfig);
+  mpDb = firebase.database();
+} catch(e){
+  console.warn('Firebase failed to initialize — Heads-Up Lobby will be unavailable.', e);
+}
+
 /* ---------------------------------------------------------
    DATA
 --------------------------------------------------------- */
@@ -906,6 +977,11 @@ const CAR_IMAGES = {
   '\'98 Eclipse GSX': 'eclipse-98-gsx.jpg',
   '\'88 Tercel': 'tercel-88.jpg',
   '\'90 Sentra': 'sentra-90.jpg',
+  '\'02 240SX': '240sx-02.jpg',
+  '\'01 Prelude': 'prelude-01.jpg',
+  '\'99 Civic Si': 'civic-99-si.jpg',
+  '\'89 Mustang GT': 'mustang-89.jpg',
+  '\'95 Miata': 'miata-95.jpg',
 };
 
 // Market buyers — wide pool of car-culture usernames, plus two rare easter-egg buyers.
@@ -932,16 +1008,39 @@ const RACE_SITES = [
 // costs the most to enter, and pays out the most. repUnlock is the site's own
 // (green) Reputation threshold required before that race type opens up.
 const RACE_TYPES = [
-  { key:'drag',    label:'DRAG RACE', desc:'Straight-line sprint. Shortest race, smallest purse.',       repUnlock:0,   buyInBase:80,  payoutMult:2.2 },
-  { key:'sprint',  label:'SPRINT',    desc:'A longer point-to-point run with more corners.',              repUnlock:150, buyInBase:160, payoutMult:2.8 },
-  { key:'circuit', label:'CIRCUIT',   desc:'Multi-lap endurance race. Longest race, biggest purse.',       repUnlock:400, buyInBase:280, payoutMult:3.4 },
+  { key:'drag',    label:'DRAG RACE', desc:'Straight-line sprint. Shortest race, smallest purse.',       repUnlock:0,   buyInBase:300, payoutMult:3.5 },
+  { key:'sprint',  label:'SPRINT',    desc:'A longer point-to-point run with more corners.',              repUnlock:150, buyInBase:500, payoutMult:4.0 },
+  { key:'circuit', label:'CIRCUIT',   desc:'Multi-lap endurance race. Longest race, biggest purse.',       repUnlock:400, buyInBase:800, payoutMult:4.5 },
 ];
 const RACE_REP_PER_WIN = 40; // scaled by tier when awarded
 
+// Which song plays for each tier/race-type combo. A tier with no entry here (3-5, for
+// now) simply isn't playable yet — see the "implemented" checks in the RACEFINDR screens.
+const TIER_RACE_SONGS = {
+  1: { drag:'redline',  sprint:'backlot_break',  circuit:'night_circuit' },
+  2: { drag:'overtake', sprint:'static_drift_v2', circuit:'faultline' },
+};
+
+/* ---------------------------------------------------------
+   HEADS-UP LOBBY — local 2-player races via shared browser storage.
+   NOTE: this only works between two tabs/windows on the SAME browser,
+/* ---------------------------------------------------------
+   HEADS-UP LOBBY — real 2-player races via Firebase Realtime
+   Database (see mpLobbyRef/mpWriteLobby/mpAttachListener). This
+   is the one part of the game that talks to the internet — it
+   works across two different computers, not just two tabs.
+--------------------------------------------------------- */
+const MP_MIN_BET = 500, MP_MAX_BET = 10000;
+const MP_SONGS = [
+  { songId:'redline',       name:'REDLINE REQUIEM' },
+  { songId:'backlot_break', name:'BACKLOT BREAK' },
+  { songId:'night_circuit', name:'NIGHT CIRCUIT' },
+];
+
 const OPPONENT_DIFFICULTIES = [
-  { key:'below', label:'BELOW AVERAGE', mult:0.75 },
-  { key:'avg',   label:'AVERAGE',       mult:1.0  },
-  { key:'above', label:'ABOVE AVERAGE', mult:1.25 },
+  { key:'below', label:'BELOW AVERAGE', mult:0.65, payoutMult:0.8 },
+  { key:'avg',   label:'AVERAGE',       mult:1.0,  payoutMult:1.0 },
+  { key:'above', label:'ABOVE AVERAGE', mult:1.5,  payoutMult:1.6 },
 ];
 const RIVAL_NAMES = [
   'Vega','Ghost Rider','Ironclad','Silver Fox','Blacktop Bandit','Nightshade','Torque Reaper',
@@ -991,6 +1090,7 @@ let state = {
     lastResult: null,  // {win, payout, buyIn, repGain, accuracyPct}
   },
   workshopCarId: null,
+  ownedTracks: [], // songIds purchased for the Audio Player
   nextId: 1,
 };
 
@@ -998,6 +1098,25 @@ let installPicker = null;         // {carId, category, slotIndex}
 let benefitsSiteIdx = null;
 let workshopActiveCategory = null; // which category's slots are currently shown in the Workshop
 let raceRuntime = null;            // holds the live race session (audio, chart, judged notes, score, rAF id)
+let mp = { code:null, role:null, myBet:1000, raceLaunched:false, resultShown:false, data:null, ref:null, listenerAttached:false };
+
+// Shared Web Audio session — one persistent context reused by both the race screen and
+// the background Audio Player, so a track can keep playing while browsing other tabs
+// without spinning up (or leaking) a separate AudioContext per session.
+let audioCtx = null, audioMasterGain = null, audioAnalyser = null;
+function ensureAudioContext(){
+  if(!audioCtx){
+    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    audioMasterGain = audioCtx.createGain();
+    audioMasterGain.gain.value = 0.8;
+    audioAnalyser = audioCtx.createAnalyser();
+    audioAnalyser.fftSize = 64;
+    audioMasterGain.connect(audioAnalyser);
+    audioAnalyser.connect(audioCtx.destination);
+  }
+  audioCtx.resume();
+  return audioCtx;
+}
 
 function rarityByKey(k){ return RARITIES.find(r=>r.key===k); }
 
@@ -1479,6 +1598,11 @@ function setTab(tab){
   if(tab !== 'garage'){ state.workshopCarId = null; workshopActiveCategory = null; }
   if(tab !== 'race'){
     if(state.races.view === 'race') stopRaceAudio();
+    if(mp.code){
+      if(mpDb) mpLobbyRef(mp.code).remove().catch(()=>{});
+      mpDetachListener();
+      mp = { code:null, role:null, myBet:1000, raceLaunched:false, resultShown:false, data:null, ref:null, listenerAttached:false };
+    }
     state.races.view = 'home';
     state.races.siteIdx = null;
     state.races.raceType = null;
@@ -1500,6 +1624,7 @@ function render(){
   else if(state.activeTab==='market') renderMarket();
   else if(state.activeTab==='garage') renderGarage();
   else if(state.activeTab==='race') renderRace();
+  else if(state.activeTab==='audio') renderAudioPlayer();
 }
 
 function renderDiscountTimerTag(site){
@@ -2759,6 +2884,331 @@ function songFreq(root, semis){ return root*Math.pow(2, semis/12); }
 const SONG_HOOK = [SONG_SCALE['1'],SONG_SCALE['5'],SONG_SCALE.b7,SONG_SCALE.oct,SONG_SCALE['5'],SONG_SCALE.b3,SONG_SCALE['1'],SONG_SCALE['5']];
 const SONG_BASS_ARP = [SONG_SCALE['1'],SONG_SCALE.b3,SONG_SCALE['5'],SONG_SCALE['1']];
 
+/* ---------------------------------------------------------
+   SPRINT & CIRCUIT RACE THEMES — "Backlot Break" (breakbeat
+   groove) and "Night Circuit" (half-time-flavored moodier
+   groove), both original compositions with their own chord
+   progressions, drum patterns, and note charts — distinct
+   from Redline Requiem rather than reskins of it.
+--------------------------------------------------------- */
+function buildRaceSections(arrangement){
+  let cursor = 0;
+  return arrangement.map(s=>{
+    const sec = { kind:s.kind, label:s.label||s.kind, bars:s.bars, transpose:s.transpose };
+    sec.startBar = cursor; cursor += s.bars; sec.endBar = cursor;
+    return sec;
+  });
+}
+function raceSectionForBarIn(sections, bar){
+  return sections.find(s=> bar>=s.startBar && bar<s.endBar) || sections[sections.length-1];
+}
+function getRaceChordRootSemis(progression, scale, bar){
+  const cycleLen = progression.reduce((a,c)=>a+c.bars,0);
+  let pos = ((bar % cycleLen)+cycleLen)%cycleLen;
+  for(const entry of progression){
+    if(pos < entry.bars) return scale[entry.chord];
+    pos -= entry.bars;
+  }
+  return scale[progression[0].chord];
+}
+
+/* ---- BACKLOT BREAK (Sprint) — B minor, 165 BPM, breakbeat groove ---- */
+const BB_BPM = 165;
+const BB_ARRANGEMENT = [
+  { kind:'INTRO', bars:8 },
+  { kind:'VERSE', bars:16 },
+  { kind:'BUILD', bars:8 },
+  { kind:'DROP', bars:16, label:'DROP' },
+  { kind:'BREAKDOWN', bars:8 },
+  { kind:'DROP', bars:16, label:'FINAL CHORUS', transpose:2 },
+  { kind:'OUTRO', bars:4 },
+];
+const BB_SECTIONS = buildRaceSections(BB_ARRANGEMENT);
+const BB_TOTAL_BARS = BB_SECTIONS[BB_SECTIONS.length-1].endBar;
+const BB_TOTAL_STEPS = BB_TOTAL_BARS * SONG_STEPS_PER_BAR;
+const BB_STEP_DURATION = (60/BB_BPM)/SONG_STEPS_PER_BEAT;
+const BB_ROOT_BASS = 61.74, BB_ROOT_LEAD = 123.47; // B2 / B3
+const BB_PROGRESSION = [ {chord:'1',bars:2}, {chord:'4',bars:2}, {chord:'5',bars:2}, {chord:'1',bars:2} ];
+const BB_BASS_PATTERN = [0,7,0,12];
+const BB_HOOK = ['1','4','b7','5','4','1','5','b7'];
+const BB_GALLOP = [1,0,1,1,0,1,0,1,1,0,1,0,1,1,0,1];
+// Kick lands on 0,3,6,10,12 (not the even grid); each value is the bass pitch that
+// fires alongside that kick hit; null = no hit that step.
+const BB_KICK_PATTERN = [0,null,null,7,null,null,0,null,null,null,12,null,0,null,null,null];
+// Snare sits on 4, 11, 14 instead of the usual 2 & 4 backbeat.
+const BB_SNARE_PATTERN = [0,0,0,0,1,0,0,0,0,0,0,1,0,0,1,0];
+
+function scheduleBacklotStep(globalStep, time){
+  const bar = Math.floor(globalStep/SONG_STEPS_PER_BAR);
+  const stepInBar = globalStep % SONG_STEPS_PER_BAR;
+  const section = raceSectionForBarIn(BB_SECTIONS, bar);
+  const barInSection = bar - section.startBar;
+  const transpose = section.transpose || 0;
+  const chordRoot = getRaceChordRootSemis(BB_PROGRESSION, SONG_SCALE, bar);
+  const swing = (stepInBar%2===1) ? BB_STEP_DURATION*0.08 : 0;
+  time += swing;
+
+  switch(section.kind){
+    case 'INTRO': {
+      if(barInSection===0 && stepInBar===0) racePlayPadChord(time, BB_STEP_DURATION*SONG_STEPS_PER_BAR*4, transpose, BB_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      const prog = (barInSection*SONG_STEPS_PER_BAR+stepInBar)/(section.bars*SONG_STEPS_PER_BAR);
+      if(stepInBar%4===0) racePlayRiserTick(time, prog);
+      if(barInSection>=section.bars-4 && stepInBar%4===0) racePlayKick(time);
+      if(barInSection>=section.bars-2 && stepInBar%2===0) racePlayHat(time,false);
+      break;
+    }
+    case 'VERSE': {
+      if(stepInBar%4===0) racePlayKick(time);
+      if(BB_GALLOP[stepInBar] && stepInBar%2===0) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%BB_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+BB_BASS_PATTERN[idx], BB_STEP_DURATION*1.9, transpose, BB_ROOT_BASS);
+      }
+      if(barInSection%2===1 && stepInBar%2===0){
+        const idx=(stepInBar/2)%BB_HOOK.length;
+        racePlayLead(time, SONG_SCALE[BB_HOOK[idx]], BB_STEP_DURATION*1.8, transpose, 0.14, BB_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BUILD': {
+      const isLastBar = barInSection===section.bars-1;
+      const silenceStep = SONG_STEPS_PER_BAR-4;
+      if(stepInBar%4===0 && !(isLastBar && stepInBar>=silenceStep)) racePlayKick(time);
+      if(stepInBar%2===0 && !(isLastBar && stepInBar>=silenceStep)){
+        const idx=(stepInBar/2)%BB_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+BB_BASS_PATTERN[idx], BB_STEP_DURATION*1.9, transpose, BB_ROOT_BASS);
+      }
+      if(isLastBar && stepInBar>=silenceStep){
+        if(stepInBar===silenceStep) racePlayStab(time, [chordRoot+12], BB_STEP_DURATION*3.5, transpose, BB_ROOT_LEAD);
+        break;
+      }
+      const progress = barInSection/Math.max(1,section.bars-1);
+      const hitEvery = progress<0.3?4 : progress<0.6?2 : 1;
+      if(stepInBar%hitEvery===0) racePlaySnare(time,false);
+      break;
+    }
+    case 'DROP': {
+      const kickVal = BB_KICK_PATTERN[stepInBar];
+      if(kickVal!==null && kickVal!==undefined){
+        racePlayKick(time);
+        racePlayBassNote(time, chordRoot+kickVal, BB_STEP_DURATION*2.4, transpose, BB_ROOT_BASS);
+      }
+      if(BB_SNARE_PATTERN[stepInBar]) racePlaySnare(time,true);
+      if(BB_GALLOP[stepInBar]) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%BB_HOOK.length;
+        const vol = section.transpose ? 0.38 : 0.34;
+        racePlayLead(time, SONG_SCALE[BB_HOOK[idx]], BB_STEP_DURATION*1.9, transpose, vol, BB_ROOT_LEAD);
+      }
+      if(BB_SNARE_PATTERN[stepInBar]){
+        racePlayStab(time, [chordRoot,chordRoot+7,chordRoot+12], BB_STEP_DURATION*1.6, transpose, BB_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BREAKDOWN': {
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%BB_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+BB_BASS_PATTERN[idx], BB_STEP_DURATION*1.6, transpose, BB_ROOT_BASS);
+      }
+      if(stepInBar%4!==3){
+        racePlaySparkle(time, chordRoot+7+12, BB_STEP_DURATION*0.7, transpose, BB_ROOT_LEAD);
+      }
+      if(barInSection>=section.bars-2 && stepInBar%4===0) racePlayHat(time,false);
+      break;
+    }
+    case 'OUTRO': {
+      if(barInSection===0 && stepInBar%4===0) racePlayKick(time);
+      if(barInSection===0 && stepInBar%4===0){
+        const idx=(stepInBar/4)%BB_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+BB_BASS_PATTERN[idx], BB_STEP_DURATION*3.6, transpose, BB_ROOT_BASS);
+      }
+      if(barInSection===section.bars-1 && stepInBar===0){
+        racePlayPadChord(time, BB_STEP_DURATION*SONG_STEPS_PER_BAR*1.3, transpose, BB_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      }
+      break;
+    }
+  }
+}
+
+// Chart follows Backlot Break's own breakbeat shape directly: kick hits map to DOWN,
+// snare hits map to UP, and a few hat hits become LEFT/RIGHT taps — so the chart is
+// literally shaped by this song's groove instead of a generic repeating cycle.
+function generateBacklotBreakChart(){
+  const chart = [];
+  let altToggle = 0;
+  for(let bar=0; bar<BB_TOTAL_BARS; bar++){
+    const section = raceSectionForBarIn(BB_SECTIONS, bar);
+    const barInSection = bar - section.startBar;
+    for(let stepInBar=0; stepInBar<SONG_STEPS_PER_BAR; stepInBar++){
+      let lane = null;
+      if(section.kind==='DROP'){
+        if(BB_KICK_PATTERN[stepInBar]!==null && BB_KICK_PATTERN[stepInBar]!==undefined) lane = 1; // DOWN
+        else if(BB_SNARE_PATTERN[stepInBar]) lane = 2; // UP
+        else if(BB_GALLOP[stepInBar] && stepInBar%3===1) lane = (altToggle++%2===0) ? 0 : 3; // LEFT/RIGHT off the hats
+      } else if(section.kind==='VERSE' || section.kind==='BUILD'){
+        if(stepInBar%4===0) lane = (barInSection%2===0) ? 1 : 2;
+      } else if(section.kind==='BREAKDOWN'){
+        if(stepInBar%8===0) lane = 0;
+      } else if(section.kind==='INTRO'){
+        if(barInSection>=section.bars-2 && stepInBar%4===0) lane = 1;
+      } else if(section.kind==='OUTRO'){
+        if(stepInBar%8===0) lane = 1;
+      }
+      if(lane!==null){
+        const globalStep = bar*SONG_STEPS_PER_BAR+stepInBar;
+        chart.push({ time: globalStep*BB_STEP_DURATION, lane, hit:false, missed:false });
+      }
+    }
+  }
+  return chart;
+}
+
+/* ---- NIGHT CIRCUIT (Circuit) — D minor, 168 BPM, moodier half-cycle groove ---- */
+const NC_BPM = 168;
+const NC_ARRANGEMENT = [
+  { kind:'INTRO', bars:6 },
+  { kind:'VERSE', bars:14 },
+  { kind:'BUILD', bars:6 },
+  { kind:'DROP', bars:12, label:'DROP' },
+  { kind:'BREAKDOWN', bars:12 },
+  { kind:'DROP', bars:12, label:'DROP II' },
+  { kind:'OUTRO', bars:6 },
+];
+const NC_SECTIONS = buildRaceSections(NC_ARRANGEMENT);
+const NC_TOTAL_BARS = NC_SECTIONS[NC_SECTIONS.length-1].endBar;
+const NC_TOTAL_STEPS = NC_TOTAL_BARS * SONG_STEPS_PER_BAR;
+const NC_STEP_DURATION = (60/NC_BPM)/SONG_STEPS_PER_BEAT;
+const NC_ROOT_BASS = 73.42, NC_ROOT_LEAD = 146.83; // D2 / D3
+const NC_PROGRESSION = [ {chord:'1',bars:2}, {chord:'5',bars:2}, {chord:'b6',bars:2}, {chord:'4',bars:2} ];
+const NC_BASS_PATTERN = [0,7,0,7];
+const NC_HOOK = ['1','b7','b6','5','4','5','b6','1'];
+const NC_GALLOP = [1,0,0,0,1,0,1,0,0,0,1,0,1,0,0,0];
+
+function scheduleNightCircuitStep(globalStep, time){
+  const bar = Math.floor(globalStep/SONG_STEPS_PER_BAR);
+  const stepInBar = globalStep % SONG_STEPS_PER_BAR;
+  const section = raceSectionForBarIn(NC_SECTIONS, bar);
+  const barInSection = bar - section.startBar;
+  const transpose = section.transpose || 0;
+  const chordRoot = getRaceChordRootSemis(NC_PROGRESSION, SONG_SCALE, bar);
+  const swing = (stepInBar%2===1) ? NC_STEP_DURATION*0.06 : 0;
+  time += swing;
+
+  switch(section.kind){
+    case 'INTRO': {
+      if(barInSection===0 && stepInBar===0) racePlayPadChord(time, NC_STEP_DURATION*SONG_STEPS_PER_BAR*4, transpose, NC_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      const prog = (barInSection*SONG_STEPS_PER_BAR+stepInBar)/(section.bars*SONG_STEPS_PER_BAR);
+      if(stepInBar%4===0) racePlayRiserTick(time, prog);
+      if(barInSection>=section.bars-3 && stepInBar%4===0) racePlayKick(time);
+      break;
+    }
+    case 'VERSE': {
+      if(stepInBar%4===0) racePlayKick(time);
+      if(stepInBar%4===2) racePlayHat(time,true); else if(stepInBar%2===0) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%NC_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+NC_BASS_PATTERN[idx], NC_STEP_DURATION*1.9, transpose, NC_ROOT_BASS);
+      }
+      if(barInSection%2===1 && stepInBar%2===0){
+        const idx=(stepInBar/2)%NC_HOOK.length;
+        racePlayLead(time, SONG_SCALE[NC_HOOK[idx]], NC_STEP_DURATION*1.8, transpose, 0.14, NC_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BUILD': {
+      const isLastBar = barInSection===section.bars-1;
+      const silenceStep = SONG_STEPS_PER_BAR-4;
+      if(stepInBar%4===0 && !(isLastBar && stepInBar>=silenceStep)) racePlayKick(time);
+      if(stepInBar%2===0 && !(isLastBar && stepInBar>=silenceStep)){
+        const idx=(stepInBar/2)%NC_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+NC_BASS_PATTERN[idx], NC_STEP_DURATION*1.9, transpose, NC_ROOT_BASS);
+      }
+      if(isLastBar && stepInBar>=silenceStep){
+        if(stepInBar===silenceStep) racePlayStab(time, [chordRoot+12], NC_STEP_DURATION*3.5, transpose, NC_ROOT_LEAD);
+        break;
+      }
+      const progress = barInSection/Math.max(1,section.bars-1);
+      const hitEvery = progress<0.3?4 : progress<0.6?2 : 1;
+      if(stepInBar%hitEvery===0) racePlaySnare(time,false);
+      break;
+    }
+    case 'DROP': {
+      if(stepInBar%4===0) racePlayKick(time);
+      if(stepInBar%4===2) racePlaySnare(time,true);
+      if(NC_GALLOP[stepInBar]) racePlayHat(time,false);
+      if(stepInBar%4===0){
+        const idx=(stepInBar/4)%NC_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+NC_BASS_PATTERN[idx], NC_STEP_DURATION*3.6, transpose, NC_ROOT_BASS);
+      }
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%NC_HOOK.length;
+        racePlayLead(time, SONG_SCALE[NC_HOOK[idx]], NC_STEP_DURATION*1.9, transpose, 0.34, NC_ROOT_LEAD);
+      }
+      if(stepInBar%4===2){
+        racePlayStab(time, [chordRoot,chordRoot+7,chordRoot+12], NC_STEP_DURATION*1.6, transpose, NC_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BREAKDOWN': {
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%NC_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+NC_BASS_PATTERN[idx], NC_STEP_DURATION*1.6, transpose, NC_ROOT_BASS);
+      }
+      if(stepInBar%4!==3){
+        racePlaySparkle(time, chordRoot+7+12, NC_STEP_DURATION*0.7, transpose, NC_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'OUTRO': {
+      if(barInSection===0 && stepInBar%4===0) racePlayKick(time);
+      if(barInSection===0 && stepInBar%4===0){
+        const idx=(stepInBar/4)%NC_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+NC_BASS_PATTERN[idx], NC_STEP_DURATION*3.6, transpose, NC_ROOT_BASS);
+      }
+      if(barInSection===section.bars-1 && stepInBar===0){
+        racePlayPadChord(time, NC_STEP_DURATION*SONG_STEPS_PER_BAR*1.3, transpose, NC_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      }
+      break;
+    }
+  }
+}
+
+// Night Circuit uses the SAME drum skeleton as Redline (kick 0/4/8/12, snare 2/6/10/14),
+// so its chart instead varies by using different lane-cycle SHAPES per section — a
+// criss-cross order in the verse, a diagonal skip in the drop, a different diagonal
+// again in the second drop — rather than one repeating LEFT-DOWN-UP-RIGHT loop.
+function generateNightCircuitChart(){
+  const chart = [];
+  const counters = { verse:0, build:0, drop:0, drop2:0, breakdown:0, outro:0 };
+  for(let bar=0; bar<NC_TOTAL_BARS; bar++){
+    const section = raceSectionForBarIn(NC_SECTIONS, bar);
+    const barInSection = bar - section.startBar;
+    for(let stepInBar=0; stepInBar<SONG_STEPS_PER_BAR; stepInBar++){
+      let lane = null;
+      if(section.kind==='VERSE'){
+        if(stepInBar%4===0){ const seq=[2,0,3,1]; lane = seq[counters.verse++%seq.length]; }
+      } else if(section.kind==='BUILD'){
+        const isLastBar = barInSection===section.bars-1;
+        const every = isLastBar ? 2 : 4;
+        if(stepInBar%every===0){ const seq=[3,1,2,0]; lane = seq[counters.build++%seq.length]; }
+      } else if(section.kind==='DROP' && section.label!=='DROP II'){
+        if(stepInBar%2===0){ const seq=[1,3,0,2]; lane = seq[counters.drop++%seq.length]; }
+      } else if(section.kind==='DROP' && section.label==='DROP II'){
+        if(stepInBar%2===0){ const seq=[0,2,3,1]; lane = seq[counters.drop2++%seq.length]; }
+      } else if(section.kind==='BREAKDOWN'){
+        if(stepInBar%4===0){ const seq=[2,1]; lane = seq[counters.breakdown++%seq.length]; }
+      } else if(section.kind==='OUTRO'){
+        if(stepInBar%8===0){ const seq=[1,2]; lane = seq[counters.outro++%seq.length]; }
+      }
+      if(lane!==null){
+        const globalStep = bar*SONG_STEPS_PER_BAR+stepInBar;
+        chart.push({ time: globalStep*NC_STEP_DURATION, lane, hit:false, missed:false });
+      }
+    }
+  }
+  return chart;
+}
+
 // Auto-generates a 4-lane note chart quantized to the song's own beat grid, so
 // "on the beat" is guaranteed by construction rather than hand-placed. Density
 // scales with section intensity (sparse in the intro/breakdown, busiest in the drop).
@@ -2795,14 +3245,14 @@ function generateRaceChart(){
 
 /* ---------------- Race audio voices (bound to raceRuntime.ctx/masterGain) ---------------- */
 function raceNoiseBuffer(dur){
-  const ctx = raceRuntime.ctx;
+  const ctx = audioCtx;
   const buf = ctx.createBuffer(1, Math.max(1,Math.floor(ctx.sampleRate*dur)), ctx.sampleRate);
   const data = buf.getChannelData(0);
   for(let i=0;i<data.length;i++) data[i] = Math.random()*2-1;
   return buf;
 }
 function racePlayKick(time){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
+  const ctx=audioCtx, mg=audioMasterGain;
   const osc=ctx.createOscillator(), gain=ctx.createGain();
   osc.type='sine';
   osc.frequency.setValueAtTime(150, time);
@@ -2813,7 +3263,7 @@ function racePlayKick(time){
   osc.start(time); osc.stop(time+0.3);
 }
 function racePlayHat(time, open){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
+  const ctx=audioCtx, mg=audioMasterGain;
   const src=ctx.createBufferSource();
   src.buffer = raceNoiseBuffer(open?0.22:0.06);
   const hp=ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=7000;
@@ -2825,7 +3275,7 @@ function racePlayHat(time, open){
   src.start(time); src.stop(time+dur+0.02);
 }
 function racePlaySnare(time, gateVerb){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
+  const ctx=audioCtx, mg=audioMasterGain;
   const src=ctx.createBufferSource();
   src.buffer = raceNoiseBuffer(0.2);
   const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1800; bp.Q.value=0.9;
@@ -2857,9 +3307,9 @@ function racePlaySnare(time, gateVerb){
     });
   }
 }
-function racePlayBassNote(time, semis, dur, transpose){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
-  const f = songFreq(SONG_ROOT_BASS, semis+(transpose||0));
+function racePlayBassNote(time, semis, dur, transpose, rootBass){
+  const ctx=audioCtx, mg=audioMasterGain;
+  const f = songFreq(rootBass||SONG_ROOT_BASS, semis+(transpose||0));
   const osc=ctx.createOscillator(), filt=ctx.createBiquadFilter(), gain=ctx.createGain();
   osc.type='sawtooth'; osc.frequency.value=f;
   filt.type='lowpass'; filt.frequency.setValueAtTime(1200, time);
@@ -2870,9 +3320,9 @@ function racePlayBassNote(time, semis, dur, transpose){
   osc.connect(filt); filt.connect(gain); gain.connect(mg);
   osc.start(time); osc.stop(time+dur);
 }
-function racePlayLead(time, semis, dur, transpose, vol){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
-  const f = songFreq(SONG_ROOT_LEAD, semis+(transpose||0));
+function racePlayLead(time, semis, dur, transpose, vol, rootLead){
+  const ctx=audioCtx, mg=audioMasterGain;
+  const f = songFreq(rootLead||SONG_ROOT_LEAD, semis+(transpose||0));
   const g=ctx.createGain(), filt=ctx.createBiquadFilter();
   filt.type='lowpass'; filt.frequency.value=5200;
   g.gain.setValueAtTime(0.0001, time);
@@ -2887,8 +3337,8 @@ function racePlayLead(time, semis, dur, transpose, vol){
     osc.start(time); osc.stop(time+dur);
   });
 }
-function racePlayStab(time, semisArr, dur, transpose){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
+function racePlayStab(time, semisArr, dur, transpose, rootLead){
+  const ctx=audioCtx, mg=audioMasterGain;
   const g=ctx.createGain();
   g.gain.setValueAtTime(0.0001, time);
   g.gain.linearRampToValueAtTime(0.3, time+0.008);
@@ -2897,14 +3347,14 @@ function racePlayStab(time, semisArr, dur, transpose){
   semisArr.forEach(s=>{
     const osc=ctx.createOscillator();
     osc.type='square';
-    osc.frequency.value = songFreq(SONG_ROOT_LEAD/2, s+(transpose||0));
+    osc.frequency.value = songFreq((rootLead||SONG_ROOT_LEAD)/2, s+(transpose||0));
     osc.connect(g);
     osc.start(time); osc.stop(time+dur);
   });
 }
-function racePlaySparkle(time, semis, dur, transpose){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
-  const f = songFreq(SONG_ROOT_LEAD*2, semis+(transpose||0));
+function racePlaySparkle(time, semis, dur, transpose, rootLead){
+  const ctx=audioCtx, mg=audioMasterGain;
+  const f = songFreq((rootLead||SONG_ROOT_LEAD)*2, semis+(transpose||0));
   const osc=ctx.createOscillator(), g=ctx.createGain();
   osc.type='triangle'; osc.frequency.value=f;
   g.gain.setValueAtTime(0.0001, time);
@@ -2914,7 +3364,7 @@ function racePlaySparkle(time, semis, dur, transpose){
   osc.start(time); osc.stop(time+dur);
 }
 function racePlayRiserTick(time, prog){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
+  const ctx=audioCtx, mg=audioMasterGain;
   const src=ctx.createBufferSource();
   src.buffer = raceNoiseBuffer(0.08);
   const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 400+prog*5000;
@@ -2924,8 +3374,8 @@ function racePlayRiserTick(time, prog){
   src.connect(bp); bp.connect(g); g.connect(mg);
   src.start(time); src.stop(time+0.09);
 }
-function racePlayPadChord(time, dur, transpose){
-  const ctx=raceRuntime.ctx, mg=raceRuntime.masterGain;
+function racePlayPadChord(time, dur, transpose, rootBass, triadSemis){
+  const ctx=audioCtx, mg=audioMasterGain;
   const g=ctx.createGain(), filt=ctx.createBiquadFilter();
   filt.type='lowpass'; filt.frequency.setValueAtTime(400, time);
   filt.frequency.linearRampToValueAtTime(1800, time+dur*0.7);
@@ -2933,10 +3383,10 @@ function racePlayPadChord(time, dur, transpose){
   g.gain.linearRampToValueAtTime(0.22, time+dur*0.3);
   g.gain.linearRampToValueAtTime(0.0001, time+dur);
   g.connect(mg); filt.connect(g);
-  [SONG_SCALE['1'],SONG_SCALE.b3,SONG_SCALE['5']].forEach(s=>{
+  (triadSemis || [SONG_SCALE['1'],SONG_SCALE.b3,SONG_SCALE['5']]).forEach(s=>{
     const osc=ctx.createOscillator();
     osc.type='sawtooth';
-    osc.frequency.value = songFreq(SONG_ROOT_BASS, s+(transpose||0));
+    osc.frequency.value = songFreq(rootBass||SONG_ROOT_BASS, s+(transpose||0));
     osc.connect(filt);
     osc.start(time); osc.stop(time+dur);
   });
@@ -3048,11 +3498,627 @@ function raceScheduler(){
   const rr = raceRuntime;
   if(!rr || rr.ended) return;
   while(rr.nextStepTime < rr.ctx.currentTime + 0.12){
-    if(rr.currentStep >= SONG_TOTAL_STEPS) return;
-    scheduleRaceStep(rr.currentStep, rr.nextStepTime);
-    rr.nextStepTime += SONG_STEP_DURATION;
+    if(rr.currentStep >= rr.totalSteps) return;
+    rr.scheduleFn(rr.currentStep, rr.nextStepTime);
+    rr.nextStepTime += rr.stepDuration;
     rr.currentStep++;
   }
+}
+
+/* ---- OVERTAKE (Tier 2 Drag) — E minor, 180 BPM, DnB breakbeat with ghost snares ---- */
+const OV_BPM = 180;
+const OV_ARRANGEMENT = [
+  { kind:'INTRO', bars:4 },
+  { kind:'VERSE', bars:16 },
+  { kind:'BUILD', bars:8 },
+  { kind:'DROP', bars:16, label:'DROP' },
+  { kind:'BREAKDOWN', bars:8 },
+  { kind:'DROP', bars:16, label:'FINAL CHORUS', transpose:2 },
+  { kind:'OUTRO', bars:4 },
+];
+const OV_SECTIONS = buildRaceSections(OV_ARRANGEMENT);
+const OV_TOTAL_BARS = OV_SECTIONS[OV_SECTIONS.length-1].endBar;
+const OV_TOTAL_STEPS = OV_TOTAL_BARS * SONG_STEPS_PER_BAR;
+const OV_STEP_DURATION = (60/OV_BPM)/SONG_STEPS_PER_BEAT;
+const OV_ROOT_BASS = 82.41, OV_ROOT_LEAD = 164.81; // E2 / E3
+const OV_PROGRESSION = [
+  {chord:'1',bars:1},{chord:'b6',bars:1},{chord:'b7',bars:1},{chord:'1',bars:1},
+  {chord:'4',bars:1},{chord:'b7',bars:1},{chord:'b3',bars:1},{chord:'b7',bars:1},
+];
+const OV_BASS_PATTERN = [0,7,12,7];
+const OV_HOOK = ['1','5','oct','b7','5','4','b3','1'];
+const OV_GALLOP = [1,1,0,1,1,0,1,1,0,1,1,0,1,1,0,1];
+// Sparse DnB kick (just 0 and 10) so the busy hats and ghost snares carry the groove.
+const OV_KICK_PATTERN = [0,null,null,null,null,null,null,null,null,null,7,null,null,null,null,null];
+// Main snare on 4 & 12, ghost hits on 6 & 14 — the classic breakbeat "extra snap."
+const OV_SNARE_PATTERN = [0,0,0,0,1,0,1,0,0,0,0,0,1,0,1,0];
+const OV_GHOST_STEPS = [6,14];
+
+function scheduleOvertakeStep(globalStep, time){
+  const bar = Math.floor(globalStep/SONG_STEPS_PER_BAR);
+  const stepInBar = globalStep % SONG_STEPS_PER_BAR;
+  const section = raceSectionForBarIn(OV_SECTIONS, bar);
+  const barInSection = bar - section.startBar;
+  const transpose = section.transpose || 0;
+  const chordRoot = getRaceChordRootSemis(OV_PROGRESSION, SONG_SCALE, bar);
+
+  switch(section.kind){
+    case 'INTRO': {
+      if(barInSection===0 && stepInBar===0) racePlayPadChord(time, OV_STEP_DURATION*SONG_STEPS_PER_BAR*4, transpose, OV_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      const prog = (barInSection*SONG_STEPS_PER_BAR+stepInBar)/(section.bars*SONG_STEPS_PER_BAR);
+      if(stepInBar%4===0) racePlayRiserTick(time, prog);
+      if(barInSection>=section.bars-2 && stepInBar%4===0) racePlayKick(time);
+      break;
+    }
+    case 'VERSE': {
+      if(stepInBar%4===0) racePlayKick(time);
+      if(OV_GALLOP[stepInBar] && stepInBar%2===0) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%OV_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+OV_BASS_PATTERN[idx], OV_STEP_DURATION*1.9, transpose, OV_ROOT_BASS);
+      }
+      if(barInSection%2===1 && stepInBar%2===0){
+        const idx=(stepInBar/2)%OV_HOOK.length;
+        if(OV_HOOK[idx]!==null) racePlayLead(time, SONG_SCALE[OV_HOOK[idx]], OV_STEP_DURATION*1.8, transpose, 0.14, OV_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BUILD': {
+      const isLastBar = barInSection===section.bars-1;
+      const silenceStep = SONG_STEPS_PER_BAR-4;
+      if(stepInBar%4===0 && !(isLastBar && stepInBar>=silenceStep)) racePlayKick(time);
+      if(stepInBar%2===0 && !(isLastBar && stepInBar>=silenceStep)){
+        const idx=(stepInBar/2)%OV_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+OV_BASS_PATTERN[idx], OV_STEP_DURATION*1.9, transpose, OV_ROOT_BASS);
+      }
+      if(isLastBar && stepInBar>=silenceStep){
+        if(stepInBar===silenceStep) racePlayStab(time, [chordRoot+12], OV_STEP_DURATION*3.5, transpose, OV_ROOT_LEAD);
+        break;
+      }
+      const progress = barInSection/Math.max(1,section.bars-1);
+      const hitEvery = progress<0.3?4 : progress<0.6?2 : 1;
+      if(stepInBar%hitEvery===0) racePlaySnare(time,false);
+      break;
+    }
+    case 'DROP': {
+      const kickVal = OV_KICK_PATTERN[stepInBar];
+      if(kickVal!==null && kickVal!==undefined){
+        racePlayKick(time);
+        racePlayBassNote(time, chordRoot+kickVal, OV_STEP_DURATION*2.4, transpose, OV_ROOT_BASS);
+      }
+      if(OV_SNARE_PATTERN[stepInBar]) racePlaySnare(time, OV_GHOST_STEPS.indexOf(stepInBar)===-1);
+      if(OV_GALLOP[stepInBar]) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%OV_HOOK.length;
+        const vol = section.transpose ? 0.38 : 0.34;
+        if(OV_HOOK[idx]!==null) racePlayLead(time, SONG_SCALE[OV_HOOK[idx]], OV_STEP_DURATION*1.9, transpose, vol, OV_ROOT_LEAD);
+      }
+      if(OV_SNARE_PATTERN[stepInBar] && OV_GHOST_STEPS.indexOf(stepInBar)===-1){
+        racePlayStab(time, [chordRoot,chordRoot+7,chordRoot+12], OV_STEP_DURATION*1.6, transpose, OV_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BREAKDOWN': {
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%OV_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+OV_BASS_PATTERN[idx], OV_STEP_DURATION*1.6, transpose, OV_ROOT_BASS);
+      }
+      if(stepInBar%4!==3){
+        racePlaySparkle(time, chordRoot+7+12, OV_STEP_DURATION*0.7, transpose, OV_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'OUTRO': {
+      if(barInSection===0 && stepInBar%4===0) racePlayKick(time);
+      if(barInSection===0 && stepInBar%4===0){
+        const idx=(stepInBar/4)%OV_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+OV_BASS_PATTERN[idx], OV_STEP_DURATION*3.6, transpose, OV_ROOT_BASS);
+      }
+      if(barInSection===section.bars-1 && stepInBar===0){
+        racePlayPadChord(time, OV_STEP_DURATION*SONG_STEPS_PER_BAR*1.3, transpose, OV_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      }
+      break;
+    }
+  }
+}
+
+// Chart follows Overtake's own breakbeat shape: main kick -> DOWN, main snare -> UP,
+// and the lighter ghost-snare hits alternate LEFT/RIGHT as a texture accent.
+function generateOvertakeChart(){
+  const chart = [];
+  let altToggle = 0;
+  for(let bar=0; bar<OV_TOTAL_BARS; bar++){
+    const section = raceSectionForBarIn(OV_SECTIONS, bar);
+    const barInSection = bar - section.startBar;
+    for(let stepInBar=0; stepInBar<SONG_STEPS_PER_BAR; stepInBar++){
+      let lane = null;
+      if(section.kind==='DROP'){
+        if(OV_KICK_PATTERN[stepInBar]!==null && OV_KICK_PATTERN[stepInBar]!==undefined) lane = 1; // DOWN
+        else if(OV_SNARE_PATTERN[stepInBar]){
+          lane = OV_GHOST_STEPS.indexOf(stepInBar)!==-1 ? ((altToggle++%2===0)?0:3) : 2; // ghost=L/R, main=UP
+        }
+      } else if(section.kind==='VERSE' || section.kind==='BUILD'){
+        if(stepInBar%4===0) lane = (barInSection%2===0) ? 1 : 2;
+      } else if(section.kind==='BREAKDOWN'){
+        if(stepInBar%8===0) lane = 0;
+      } else if(section.kind==='INTRO'){
+        if(barInSection>=section.bars-2 && stepInBar%4===0) lane = 1;
+      } else if(section.kind==='OUTRO'){
+        if(stepInBar%8===0) lane = 1;
+      }
+      if(lane!==null){
+        const globalStep = bar*SONG_STEPS_PER_BAR+stepInBar;
+        chart.push({ time: globalStep*OV_STEP_DURATION, lane, hit:false, missed:false });
+      }
+    }
+  }
+  return chart;
+}
+
+/* ---- STATIC DRIFT (Tier 2 Sprint, rewrite) — G minor, 150 BPM, half-time ---- */
+const SD_BPM = 150;
+const SD_ARRANGEMENT = [
+  { kind:'INTRO', bars:8 },
+  { kind:'VERSE', bars:16 },
+  { kind:'BUILD', bars:8 },
+  { kind:'DROP', bars:16, label:'DROP' },
+  { kind:'BREAKDOWN', bars:12 },
+  { kind:'DROP', bars:16, label:'FINAL CHORUS', transpose:1 },
+  { kind:'OUTRO', bars:6 },
+];
+const SD_SECTIONS = buildRaceSections(SD_ARRANGEMENT);
+const SD_TOTAL_BARS = SD_SECTIONS[SD_SECTIONS.length-1].endBar;
+const SD_TOTAL_STEPS = SD_TOTAL_BARS * SONG_STEPS_PER_BAR;
+const SD_STEP_DURATION = (60/SD_BPM)/SONG_STEPS_PER_BEAT;
+const SD_ROOT_BASS = 98, SD_ROOT_LEAD = 196; // G2 / G3
+const SD_PROGRESSION = [ {chord:'1',bars:2}, {chord:'5',bars:2}, {chord:'b6',bars:2}, {chord:'b7',bars:2} ];
+const SD_BASS_PATTERN = [0,0,8,10];
+const SD_HOOK = ['1',null,'1','b6',null,'b7',null,'5'];
+const SD_GALLOP = [1,0,0,0,0,0,1,0,0,0,0,0,1,1,1,1];
+// FIX from round 1: both kicks now sit on even steps (0 and 6) instead of an
+// off-grid 16th-note position, so it reads as a deliberate groove, not a slip.
+const SD_KICK_PATTERN = [0,null,null,null,null,null,7,null,null,null,null,null,null,null,null,null];
+const SD_SNARE_PATTERN = [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0];
+
+function scheduleStaticDriftStep(globalStep, time){
+  const bar = Math.floor(globalStep/SONG_STEPS_PER_BAR);
+  const stepInBar = globalStep % SONG_STEPS_PER_BAR;
+  const section = raceSectionForBarIn(SD_SECTIONS, bar);
+  const barInSection = bar - section.startBar;
+  const transpose = section.transpose || 0;
+  const chordRoot = getRaceChordRootSemis(SD_PROGRESSION, SONG_SCALE, bar);
+
+  switch(section.kind){
+    case 'INTRO': {
+      if(barInSection===0 && stepInBar===0) racePlayPadChord(time, SD_STEP_DURATION*SONG_STEPS_PER_BAR*4, transpose, SD_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      const prog = (barInSection*SONG_STEPS_PER_BAR+stepInBar)/(section.bars*SONG_STEPS_PER_BAR);
+      if(stepInBar%4===0) racePlayRiserTick(time, prog);
+      if(barInSection>=section.bars-4 && stepInBar%8===0) racePlayKick(time);
+      break;
+    }
+    case 'VERSE': {
+      if(stepInBar%8===0) racePlayKick(time);
+      if(SD_GALLOP[stepInBar] && stepInBar%4===0) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%SD_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+SD_BASS_PATTERN[idx], SD_STEP_DURATION*1.9, transpose, SD_ROOT_BASS);
+      }
+      if(barInSection%2===1 && stepInBar%2===0){
+        const idx=(stepInBar/2)%SD_HOOK.length;
+        if(SD_HOOK[idx]!==null) racePlayLead(time, SONG_SCALE[SD_HOOK[idx]], SD_STEP_DURATION*1.8, transpose, 0.14, SD_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BUILD': {
+      const isLastBar = barInSection===section.bars-1;
+      const silenceStep = SONG_STEPS_PER_BAR-4;
+      if(stepInBar%4===0 && !(isLastBar && stepInBar>=silenceStep)) racePlayKick(time);
+      if(stepInBar%2===0 && !(isLastBar && stepInBar>=silenceStep)){
+        const idx=(stepInBar/2)%SD_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+SD_BASS_PATTERN[idx], SD_STEP_DURATION*1.9, transpose, SD_ROOT_BASS);
+      }
+      if(isLastBar && stepInBar>=silenceStep){
+        if(stepInBar===silenceStep) racePlayStab(time, [chordRoot+12], SD_STEP_DURATION*3.5, transpose, SD_ROOT_LEAD);
+        break;
+      }
+      const progress = barInSection/Math.max(1,section.bars-1);
+      const hitEvery = progress<0.3?4 : progress<0.6?2 : 1;
+      if(stepInBar%hitEvery===0) racePlaySnare(time,false);
+      break;
+    }
+    case 'DROP': {
+      const kickVal = SD_KICK_PATTERN[stepInBar];
+      if(kickVal!==null && kickVal!==undefined){
+        racePlayKick(time);
+        racePlayBassNote(time, chordRoot+kickVal, SD_STEP_DURATION*2.4, transpose, SD_ROOT_BASS);
+      }
+      if(SD_SNARE_PATTERN[stepInBar]) racePlaySnare(time, true);
+      if(SD_GALLOP[stepInBar]) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%SD_HOOK.length;
+        const vol = section.transpose ? 0.38 : 0.34;
+        if(SD_HOOK[idx]!==null) racePlayLead(time, SONG_SCALE[SD_HOOK[idx]], SD_STEP_DURATION*1.9, transpose, vol, SD_ROOT_LEAD);
+      }
+      if(SD_SNARE_PATTERN[stepInBar]){
+        racePlayStab(time, [chordRoot,chordRoot+7,chordRoot+12], SD_STEP_DURATION*1.6, transpose, SD_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BREAKDOWN': {
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%SD_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+SD_BASS_PATTERN[idx], SD_STEP_DURATION*1.6, transpose, SD_ROOT_BASS);
+      }
+      if(stepInBar%4!==3){
+        racePlaySparkle(time, chordRoot+7+12, SD_STEP_DURATION*0.7, transpose, SD_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'OUTRO': {
+      if(barInSection===0 && stepInBar%8===0) racePlayKick(time);
+      if(barInSection===0 && stepInBar%4===0){
+        const idx=(stepInBar/4)%SD_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+SD_BASS_PATTERN[idx], SD_STEP_DURATION*3.6, transpose, SD_ROOT_BASS);
+      }
+      if(barInSection===section.bars-1 && stepInBar===0){
+        racePlayPadChord(time, SD_STEP_DURATION*SONG_STEPS_PER_BAR*1.3, transpose, SD_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      }
+      break;
+    }
+  }
+}
+
+// Static Drift's groove is deliberately sparse (just 3 drum hits per bar in the drop),
+// so the chart leans on the hook's own rest-and-leap phrasing for extra coverage
+// instead of just the kick/snare, keeping the lane count varied throughout.
+function generateStaticDriftChart(){
+  const chart = [];
+  let hookToggle = 0;
+  for(let bar=0; bar<SD_TOTAL_BARS; bar++){
+    const section = raceSectionForBarIn(SD_SECTIONS, bar);
+    const barInSection = bar - section.startBar;
+    for(let stepInBar=0; stepInBar<SONG_STEPS_PER_BAR; stepInBar++){
+      let lane = null;
+      if(section.kind==='DROP'){
+        if(SD_KICK_PATTERN[stepInBar]!==null && SD_KICK_PATTERN[stepInBar]!==undefined) lane = 1; // DOWN
+        else if(SD_SNARE_PATTERN[stepInBar]) lane = 2; // UP
+        else if(stepInBar%2===0){
+          const idx=(stepInBar/2)%SD_HOOK.length;
+          if(SD_HOOK[idx]!==null) lane = (hookToggle++%2===0) ? 0 : 3; // melody notes fill in LEFT/RIGHT
+        }
+      } else if(section.kind==='VERSE' || section.kind==='BUILD'){
+        if(stepInBar%8===0) lane = (barInSection%2===0) ? 1 : 2;
+      } else if(section.kind==='BREAKDOWN'){
+        if(stepInBar%8===0) lane = 0;
+      } else if(section.kind==='INTRO'){
+        if(barInSection>=section.bars-2 && stepInBar%8===0) lane = 1;
+      } else if(section.kind==='OUTRO'){
+        if(stepInBar%8===0) lane = 1;
+      }
+      if(lane!==null){
+        const globalStep = bar*SONG_STEPS_PER_BAR+stepInBar;
+        chart.push({ time: globalStep*SD_STEP_DURATION, lane, hit:false, missed:false });
+      }
+    }
+  }
+  return chart;
+}
+
+/* ---- FAULTLINE (Tier 2 Circuit) — G# minor, 165 BPM, snare-forward riff ---- */
+const FL_BPM = 165;
+const FL_ARRANGEMENT = [
+  { kind:'INTRO', bars:6 },
+  { kind:'VERSE', bars:14 },
+  { kind:'BUILD', bars:6 },
+  { kind:'DROP', bars:16, label:'DROP' },
+  { kind:'BREAKDOWN', bars:8 },
+  { kind:'DROP', bars:16, label:'FINAL CHORUS', transpose:2 },
+  { kind:'OUTRO', bars:4 },
+];
+const FL_SECTIONS = buildRaceSections(FL_ARRANGEMENT);
+const FL_TOTAL_BARS = FL_SECTIONS[FL_SECTIONS.length-1].endBar;
+const FL_TOTAL_STEPS = FL_TOTAL_BARS * SONG_STEPS_PER_BAR;
+const FL_STEP_DURATION = (60/FL_BPM)/SONG_STEPS_PER_BEAT;
+const FL_ROOT_BASS = 103.83, FL_ROOT_LEAD = 207.65; // G#2 / G#3
+const FL_PROGRESSION = [ {chord:'1',bars:2}, {chord:'5',bars:2}, {chord:'1',bars:2}, {chord:'4',bars:2} ];
+const FL_BASS_PATTERN = [0,7,0,5];
+const FL_HOOK = ['1','5','b3','1','5','b3',null,null];
+const FL_GALLOP = [1,0,0,1,0,0,1,0,0,1,0,0,1,0,0,1];
+// Sparse kick (just the downbeat) so the snare carries most of the groove.
+const FL_KICK_PATTERN = [0,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null];
+const FL_SNARE_PATTERN = [0,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0];
+
+function scheduleFaultlineStep(globalStep, time){
+  const bar = Math.floor(globalStep/SONG_STEPS_PER_BAR);
+  const stepInBar = globalStep % SONG_STEPS_PER_BAR;
+  const section = raceSectionForBarIn(FL_SECTIONS, bar);
+  const barInSection = bar - section.startBar;
+  const transpose = section.transpose || 0;
+  const chordRoot = getRaceChordRootSemis(FL_PROGRESSION, SONG_SCALE, bar);
+
+  switch(section.kind){
+    case 'INTRO': {
+      if(barInSection===0 && stepInBar===0) racePlayPadChord(time, FL_STEP_DURATION*SONG_STEPS_PER_BAR*4, transpose, FL_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      const prog = (barInSection*SONG_STEPS_PER_BAR+stepInBar)/(section.bars*SONG_STEPS_PER_BAR);
+      if(stepInBar%4===0) racePlayRiserTick(time, prog);
+      if(barInSection>=section.bars-3 && stepInBar%4===0) racePlayKick(time);
+      break;
+    }
+    case 'VERSE': {
+      if(stepInBar%8===0) racePlayKick(time);
+      if(FL_GALLOP[stepInBar] && stepInBar%2===0) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%FL_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+FL_BASS_PATTERN[idx], FL_STEP_DURATION*1.9, transpose, FL_ROOT_BASS);
+      }
+      if(barInSection%2===1 && stepInBar%2===0){
+        const idx=(stepInBar/2)%FL_HOOK.length;
+        if(FL_HOOK[idx]!==null) racePlayLead(time, SONG_SCALE[FL_HOOK[idx]], FL_STEP_DURATION*1.8, transpose, 0.14, FL_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BUILD': {
+      const isLastBar = barInSection===section.bars-1;
+      const silenceStep = SONG_STEPS_PER_BAR-4;
+      if(stepInBar%4===0 && !(isLastBar && stepInBar>=silenceStep)) racePlayKick(time);
+      if(stepInBar%2===0 && !(isLastBar && stepInBar>=silenceStep)){
+        const idx=(stepInBar/2)%FL_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+FL_BASS_PATTERN[idx], FL_STEP_DURATION*1.9, transpose, FL_ROOT_BASS);
+      }
+      if(isLastBar && stepInBar>=silenceStep){
+        if(stepInBar===silenceStep) racePlayStab(time, [chordRoot+12], FL_STEP_DURATION*3.5, transpose, FL_ROOT_LEAD);
+        break;
+      }
+      const progress = barInSection/Math.max(1,section.bars-1);
+      const hitEvery = progress<0.3?4 : progress<0.6?2 : 1;
+      if(stepInBar%hitEvery===0) racePlaySnare(time,false);
+      break;
+    }
+    case 'DROP': {
+      const kickVal = FL_KICK_PATTERN[stepInBar];
+      if(kickVal!==null && kickVal!==undefined){
+        racePlayKick(time);
+        racePlayBassNote(time, chordRoot+kickVal, FL_STEP_DURATION*2.4, transpose, FL_ROOT_BASS);
+      }
+      if(FL_SNARE_PATTERN[stepInBar]) racePlaySnare(time, true);
+      if(FL_GALLOP[stepInBar]) racePlayHat(time,false);
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%FL_HOOK.length;
+        const vol = section.transpose ? 0.38 : 0.34;
+        if(FL_HOOK[idx]!==null) racePlayLead(time, SONG_SCALE[FL_HOOK[idx]], FL_STEP_DURATION*1.9, transpose, vol, FL_ROOT_LEAD);
+      }
+      if(FL_SNARE_PATTERN[stepInBar]){
+        racePlayStab(time, [chordRoot,chordRoot+7,chordRoot+12], FL_STEP_DURATION*1.6, transpose, FL_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'BREAKDOWN': {
+      if(stepInBar%2===0){
+        const idx=(stepInBar/2)%FL_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+FL_BASS_PATTERN[idx], FL_STEP_DURATION*1.6, transpose, FL_ROOT_BASS);
+      }
+      if(stepInBar%4!==3){
+        racePlaySparkle(time, chordRoot+7+12, FL_STEP_DURATION*0.7, transpose, FL_ROOT_LEAD);
+      }
+      break;
+    }
+    case 'OUTRO': {
+      if(barInSection===0 && stepInBar%4===0) racePlayKick(time);
+      if(barInSection===0 && stepInBar%4===0){
+        const idx=(stepInBar/4)%FL_BASS_PATTERN.length;
+        racePlayBassNote(time, chordRoot+FL_BASS_PATTERN[idx], FL_STEP_DURATION*3.6, transpose, FL_ROOT_BASS);
+      }
+      if(barInSection===section.bars-1 && stepInBar===0){
+        racePlayPadChord(time, FL_STEP_DURATION*SONG_STEPS_PER_BAR*1.3, transpose, FL_ROOT_BASS, [chordRoot,chordRoot+3,chordRoot+7]);
+      }
+      break;
+    }
+  }
+}
+
+// Snare carries the groove here (kick is nearly bare), so the chart puts the snare
+// hits on DOWN/UP and fills the riff's own repeated-then-resting shape into LEFT/RIGHT.
+function generateFaultlineChart(){
+  const chart = [];
+  let snareToggle = 0, hookToggle = 0;
+  for(let bar=0; bar<FL_TOTAL_BARS; bar++){
+    const section = raceSectionForBarIn(FL_SECTIONS, bar);
+    const barInSection = bar - section.startBar;
+    for(let stepInBar=0; stepInBar<SONG_STEPS_PER_BAR; stepInBar++){
+      let lane = null;
+      if(section.kind==='DROP'){
+        if(FL_KICK_PATTERN[stepInBar]!==null && FL_KICK_PATTERN[stepInBar]!==undefined) lane = 1; // DOWN
+        else if(FL_SNARE_PATTERN[stepInBar]) lane = (snareToggle++%2===0) ? 2 : 1; // UP, occasionally reinforcing DOWN
+        else if(stepInBar%2===0){
+          const idx=(stepInBar/2)%FL_HOOK.length;
+          if(FL_HOOK[idx]!==null) lane = (hookToggle++%2===0) ? 0 : 3;
+        }
+      } else if(section.kind==='VERSE' || section.kind==='BUILD'){
+        if(stepInBar%8===0) lane = (barInSection%2===0) ? 1 : 2;
+      } else if(section.kind==='BREAKDOWN'){
+        if(stepInBar%8===0) lane = 0;
+      } else if(section.kind==='INTRO'){
+        if(barInSection>=section.bars-2 && stepInBar%4===0) lane = 1;
+      } else if(section.kind==='OUTRO'){
+        if(stepInBar%8===0) lane = 1;
+      }
+      if(lane!==null){
+        const globalStep = bar*SONG_STEPS_PER_BAR+stepInBar;
+        chart.push({ time: globalStep*FL_STEP_DURATION, lane, hit:false, missed:false });
+      }
+    }
+  }
+  return chart;
+}
+
+// Unified lookup so race-launch code can grab a song's chart/scheduler/timing by id
+// without a growing if/else chain — add a new entry here whenever a new song is wired in.
+const SONG_ENGINES = {
+  redline:          { name:'REDLINE REQUIEM',  chart:generateRaceChart,          totalSteps:()=>SONG_TOTAL_STEPS, stepDuration:()=>SONG_STEP_DURATION, scheduleFn:scheduleRaceStep },
+  backlot_break:    { name:'BACKLOT BREAK',    chart:generateBacklotBreakChart,  totalSteps:()=>BB_TOTAL_STEPS,   stepDuration:()=>BB_STEP_DURATION,   scheduleFn:scheduleBacklotStep },
+  night_circuit:    { name:'NIGHT CIRCUIT',    chart:generateNightCircuitChart,  totalSteps:()=>NC_TOTAL_STEPS,   stepDuration:()=>NC_STEP_DURATION,   scheduleFn:scheduleNightCircuitStep },
+  overtake:         { name:'OVERTAKE',         chart:generateOvertakeChart,      totalSteps:()=>OV_TOTAL_STEPS,   stepDuration:()=>OV_STEP_DURATION,   scheduleFn:scheduleOvertakeStep },
+  static_drift_v2:  { name:'STATIC DRIFT',     chart:generateStaticDriftChart,   totalSteps:()=>SD_TOTAL_STEPS,   stepDuration:()=>SD_STEP_DURATION,   scheduleFn:scheduleStaticDriftStep },
+  faultline:        { name:'FAULTLINE',        chart:generateFaultlineChart,     totalSteps:()=>FL_TOTAL_STEPS,   stepDuration:()=>FL_STEP_DURATION,   scheduleFn:scheduleFaultlineStep },
+};
+const ALL_SONG_IDS = Object.keys(SONG_ENGINES);
+
+/* ---------------------------------------------------------
+   AUDIO PLAYER — track unlocks/purchases, and a persistent
+   background playback session that survives switching tabs.
+--------------------------------------------------------- */
+const WINS_TO_UNLOCK_TRACK = 3;
+const TRACK_PRICE_BY_TIER = { 1:500, 2:900, 3:1400, 4:2000, 5:2800 };
+
+function getSongTierAndType(songId){
+  for(const tierStr in TIER_RACE_SONGS){
+    const tier = Number(tierStr);
+    const types = TIER_RACE_SONGS[tier];
+    for(const typeKey in types){
+      if(types[typeKey] === songId) return { tier, typeKey };
+    }
+  }
+  return null;
+}
+function getSongWinCount(songId){
+  const loc = getSongTierAndType(songId);
+  if(!loc) return 0;
+  const site = RACE_SITES.find(s=>s.tier===loc.tier);
+  return site ? site.wins[loc.typeKey] : 0;
+}
+function isTrackUnlocked(songId){
+  return getSongWinCount(songId) >= WINS_TO_UNLOCK_TRACK;
+}
+function isTrackOwned(songId){
+  return state.ownedTracks.includes(songId);
+}
+function getTrackPrice(songId){
+  const loc = getSongTierAndType(songId);
+  const tier = loc ? loc.tier : 1;
+  return TRACK_PRICE_BY_TIER[tier] || 500;
+}
+function buyTrack(songId){
+  if(isTrackOwned(songId)) return;
+  if(!isTrackUnlocked(songId)){ showToast('Win this race a few more times to unlock the track.'); return; }
+  const price = getTrackPrice(songId);
+  if(state.cash < price){ showToast('Not enough cash for this track.'); return; }
+  state.cash -= price;
+  state.ownedTracks.push(songId);
+  renderTopbar();
+  showToast(`Purchased ${SONG_ENGINES[songId].name}!`);
+  render();
+}
+
+// One persistent playback session, independent of raceRuntime and independent of
+// which nav tab is currently open — this is what lets music keep playing while you
+// browse cases, the market, or the garage.
+let apRuntime = { songId:null, currentStep:0, nextStepTime:0, playing:false, schedulerTimer:null, totalSteps:0, stepDuration:0, scheduleFn:null };
+
+function apStopPlayback(){
+  apRuntime.playing = false;
+  clearInterval(apRuntime.schedulerTimer);
+  apRuntime.schedulerTimer = null;
+  if(state.activeTab==='audio') renderAudioPlayer();
+}
+
+function apPlayTrack(songId){
+  if(!isTrackOwned(songId)) return;
+  if(raceRuntime && !raceRuntime.ended){ showToast('Finish or forfeit your current race first.'); return; }
+  ensureAudioContext();
+  apStopPlayback();
+  const engine = SONG_ENGINES[songId];
+  apRuntime.songId = songId;
+  apRuntime.totalSteps = engine.totalSteps();
+  apRuntime.stepDuration = engine.stepDuration();
+  apRuntime.scheduleFn = engine.scheduleFn;
+  apRuntime.currentStep = 0;
+  apRuntime.nextStepTime = audioCtx.currentTime + 0.05;
+  apRuntime.playing = true;
+  apRuntime.schedulerTimer = setInterval(apScheduler, 25);
+  requestAnimationFrame(apAnimLoop);
+  if(state.activeTab==='audio') renderAudioPlayer();
+}
+
+// Loops the track continuously — this is meant as background listening, not a
+// one-shot playthrough, so it just wraps back to step 0 at the end.
+function apScheduler(){
+  if(!apRuntime.playing) return;
+  while(apRuntime.nextStepTime < audioCtx.currentTime + 0.12){
+    if(apRuntime.currentStep >= apRuntime.totalSteps){
+      apRuntime.currentStep = 0;
+      apRuntime.nextStepTime = audioCtx.currentTime + 0.05;
+      continue;
+    }
+    apRuntime.scheduleFn(apRuntime.currentStep, apRuntime.nextStepTime);
+    apRuntime.nextStepTime += apRuntime.stepDuration;
+    apRuntime.currentStep++;
+  }
+}
+
+// Visual updates only matter while actually looking at the Audio Player tab — the
+// scheduler above keeps the audio itself running regardless of which tab is open.
+function apAnimLoop(){
+  if(!apRuntime.playing) return;
+  if(state.activeTab==='audio') apDrawVisualizer();
+  requestAnimationFrame(apAnimLoop);
+}
+
+function apDrawVisualizer(){
+  const canvas = document.getElementById('apVizCanvas');
+  if(!canvas || !audioAnalyser) return;
+  const ctx2 = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx2.clearRect(0,0,W,H);
+  const data = new Uint8Array(audioAnalyser.frequencyBinCount);
+  audioAnalyser.getByteFrequencyData(data);
+  const barCount = 40;
+  const barW = W/barCount;
+  for(let i=0;i<barCount;i++){
+    const v = data[Math.floor(i*data.length/barCount)] || 0;
+    const barH = Math.max(2, (v/255)*H);
+    ctx2.fillStyle = '#f2b705';
+    ctx2.fillRect(i*barW+1, H-barH, barW-2, barH);
+  }
+}
+
+function renderAudioPlayer(){
+  let body = `<h2 class="pagetitle">AUDIO PLAYER</h2><p class="pagesub">Win a race ${WINS_TO_UNLOCK_TRACK} times to unlock its track, then buy it here. Owned tracks keep playing in the background while you browse other tabs.</p>`;
+
+  body += `<div class="apVizWrap"><canvas id="apVizCanvas" width="600" height="90"></canvas></div>`;
+
+  if(apRuntime.playing){
+    body += `<div class="apNowPlaying">NOW PLAYING: <b>${SONG_ENGINES[apRuntime.songId].name}</b> <button class="smallBtn" onclick="apStopPlayback()">STOP</button></div>`;
+  } else {
+    body += `<div class="apNowPlaying">Nothing playing.</div>`;
+  }
+
+  body += `<div class="apTrackList">`;
+  ALL_SONG_IDS.forEach(songId=>{
+    const engine = SONG_ENGINES[songId];
+    const loc = getSongTierAndType(songId);
+    const wins = getSongWinCount(songId);
+    const unlocked = isTrackUnlocked(songId);
+    const owned = isTrackOwned(songId);
+    const price = getTrackPrice(songId);
+    const isPlayingThis = apRuntime.playing && apRuntime.songId===songId;
+    let statusHtml;
+    if(owned){
+      statusHtml = `<button class="smallBtn ${isPlayingThis?'on':''}" onclick="apPlayTrack('${songId}')" ${isPlayingThis?'disabled':''}>${isPlayingThis?'PLAYING':'PLAY'}</button>`;
+    } else if(unlocked){
+      statusHtml = `<button class="buyBtn" ${state.cash<price?'disabled':''} onclick="buyTrack('${songId}')">BUY $${price.toLocaleString()}</button>`;
+    } else {
+      statusHtml = `<span class="apLocked">LOCKED — ${wins}/${WINS_TO_UNLOCK_TRACK} wins</span>`;
+    }
+    body += `<div class="apTrackRow ${owned?'':'locked'}">
+      <div>
+        <div class="apTrackName">${engine.name}</div>
+        <div class="apTrackSub">${loc ? `Tier ${loc.tier} — ${loc.typeKey.toUpperCase()}${owned ? '' : ` · $${price.toLocaleString()}`}` : ''}</div>
+      </div>
+      ${statusHtml}
+    </div>`;
+  });
+  body += `</div>`;
+  content.innerHTML = body;
 }
 
 /* ---------------- RACEFINDR navigation & screens ---------------- */
@@ -3067,6 +4133,8 @@ function raceFrame(bodyHtml, bookmarks){
 function renderRace(){
   if(state.races.view==='site'){ renderRaceSitePage(); return; }
   if(state.races.view==='opponent'){ renderOpponentSelect(); return; }
+  if(state.races.view==='multiplayer'){ renderMultiplayerHome(); return; }
+  if(state.races.view==='mpLobby'){ renderMultiplayerLobby(); return; }
   if(state.races.view==='race' || state.races.view==='result'){ return; } // screen persists once built
   renderRaceHome();
 }
@@ -3078,7 +4146,7 @@ function renderRaceHome(){
   </div>
   <div class="sfResultsList">`;
   RACE_SITES.forEach((site, si)=>{
-    const isAvailable = site.tier === 1; // only Tier 1 is wired up for now
+    const isAvailable = !!TIER_RACE_SONGS[site.tier];
     body += `<div class="sfResult" ${isAvailable?`onclick="openRaceSite(${si})"`:''} style="${isAvailable?'':'opacity:.5;cursor:default;'}">
       <div class="sfResultTitle">${site.name}</div>
       <div class="sfResultUrl">${site.url}</div>
@@ -3086,6 +4154,11 @@ function renderRaceHome(){
       <div class="sfResultDesc">${isAvailable ? 'Drag races, sprints, and circuits matched to your build.' : 'Coming soon — not yet open for entries.'}</div>
     </div>`;
   });
+  body += `<div class="sfResult" onclick="openMultiplayerHome()">
+    <div class="sfResultTitle">HEADS-UP LOBBY</div>
+    <div class="sfResultUrl">headsuplobby.race</div>
+    <div class="sfResultDesc">Race a second player directly — create or join a lobby, agree on a wager, and whoever hits more notes takes the pool.</div>
+  </div>`;
   body += `</div>`;
   content.innerHTML = raceFrame(body);
 }
@@ -3102,7 +4175,7 @@ function renderRaceSitePage(){
     const buyIn = Math.round(type.buyInBase * site.tier);
     const payout = Math.round(buyIn * type.payoutMult);
     const repOk = site.reputation >= type.repUnlock;
-    const implemented = (site.tier===1 && type.key==='drag');
+    const implemented = !!(TIER_RACE_SONGS[site.tier] && TIER_RACE_SONGS[site.tier][type.key]);
     const wins = site.wins[type.key];
     const affordable = state.cash >= buyIn;
     let btnLabel = 'SELECT RACE';
@@ -3145,6 +4218,256 @@ function selectRaceType(siteIdx, typeKey){
   render();
 }
 
+/* ---------------------------------------------------------
+   HEADS-UP LOBBY (multiplayer) — navigation, lobby sync, betting
+--------------------------------------------------------- */
+function openMultiplayerHome(){
+  state.races.view = 'multiplayer';
+  render();
+}
+
+function mpLobbyRef(code){ return mpDb.ref('lobbies/'+code); }
+function mpWriteLobby(code, data){
+  if(!mpDb) return;
+  mpLobbyRef(code).set(data).catch(e=>console.warn('Lobby write failed', e));
+}
+function mpGenerateCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars (0/O, 1/I)
+  let code = '';
+  for(let i=0;i<5;i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+
+// Subscribes to live updates for the current lobby. Firebase pushes a callback
+// immediately with the current value, then again every time anything changes —
+// this is what actually lets two different computers see each other's moves.
+function mpAttachListener(){
+  if(mp.listenerAttached || !mp.code || !mpDb) return;
+  mp.listenerAttached = true;
+  mp.ref = mpLobbyRef(mp.code);
+  mp.ref.on('value', (snapshot)=>{
+    mp.data = snapshot.val();
+    mpHandleLobbyUpdate(mp.data);
+  }, (err)=>{
+    console.warn('Lobby listener error', err);
+    showToast('Lost connection to the lobby.');
+  });
+}
+function mpDetachListener(){
+  if(mp.ref) mp.ref.off();
+  mp.ref = null;
+  mp.listenerAttached = false;
+}
+
+function mpCreateLobby(){
+  if(!mpDb){ showToast('Multiplayer is unavailable right now.'); return; }
+  const code = mpGenerateCode();
+  mp = { code, role:'host', myBet:1000, raceLaunched:false, resultShown:false, data:null, ref:null, listenerAttached:false };
+  mpWriteLobby(code, {
+    code, hostJoined:true, guestJoined:false,
+    hostBet:1000, guestBet:1000, hostReady:false, guestReady:false,
+    status:'waiting', songId:null,
+    hostAccuracy:null, guestAccuracy:null, hostDone:false, guestDone:false,
+    createdAt: Date.now(),
+  });
+  mpAttachListener();
+  state.races.view = 'mpLobby';
+  render();
+}
+
+function mpJoinLobbyFromInput(){
+  if(!mpDb){ showToast('Multiplayer is unavailable right now.'); return; }
+  const el = document.getElementById('mpJoinCodeInput');
+  const code = (el ? el.value : '').trim().toUpperCase();
+  if(!code){ showToast('Enter a lobby code.'); return; }
+  mpLobbyRef(code).once('value').then(snapshot=>{
+    const data = snapshot.val();
+    if(!data){ showToast('No lobby found with that code — check it and try again.'); return; }
+    if(data.guestJoined){ showToast('That lobby already has two players.'); return; }
+    mp = { code, role:'guest', myBet:data.guestBet||1000, raceLaunched:false, resultShown:false, data:null, ref:null, listenerAttached:false };
+    mpLobbyRef(code).child('guestJoined').set(true);
+    mpAttachListener();
+    state.races.view = 'mpLobby';
+    render();
+  }).catch(e=>{
+    console.warn('Join failed', e);
+    showToast('Could not reach the lobby server — check your connection.');
+  });
+}
+
+function mpSetBet(val){
+  const n = Math.max(MP_MIN_BET, Math.min(MP_MAX_BET, Math.round(Number(val)||MP_MIN_BET)));
+  mp.myBet = n;
+  if(!mp.code || !mpDb) return;
+  mpLobbyRef(mp.code).child(mp.role==='host' ? 'hostBet' : 'guestBet').set(n);
+}
+
+function mpToggleReady(){
+  if(!mp.data || !mp.code || !mpDb) return;
+  const field = mp.role==='host' ? 'hostReady' : 'guestReady';
+  mpLobbyRef(mp.code).child(field).set(!mp.data[field]);
+}
+
+function mpLeaveLobby(){
+  if(mp.code && mpDb) mpLobbyRef(mp.code).remove().catch(()=>{});
+  mpDetachListener();
+  mp = { code:null, role:null, myBet:1000, raceLaunched:false, resultShown:false, data:null, ref:null, listenerAttached:false };
+  state.races.view = 'home';
+  render();
+}
+
+// Fires every time the shared lobby record changes — for either player, since
+// Firebase pushes the update to both sides independently.
+function mpHandleLobbyUpdate(data){
+  if(!data){
+    if(state.races.view==='mpLobby') renderMultiplayerLobby();
+    return;
+  }
+
+  // Only the host assigns the random song, to avoid both sides picking different ones.
+  if(data.status==='waiting' && data.hostJoined && data.guestJoined && data.hostReady && data.guestReady && data.hostBet===data.guestBet && !data.songId && mp.role==='host'){
+    const pick = MP_SONGS[Math.floor(Math.random()*MP_SONGS.length)];
+    mpLobbyRef(mp.code).update({ songId: pick.songId, status:'starting' });
+    return; // wait for the listener to fire again with the update applied
+  }
+
+  if(data.status==='starting' && data.songId && !mp.raceLaunched){
+    mp.raceLaunched = true;
+    mp.myBet = (mp.role==='host') ? data.hostBet : data.guestBet;
+    startMultiplayerRaceSequence(data.songId);
+    return;
+  }
+
+  if(data.status==='finished' && !mp.resultShown){
+    mp.resultShown = true;
+    mpFinalizeResult(data);
+    return;
+  }
+
+  if(state.races.view==='mpLobby') renderMultiplayerLobby();
+}
+
+function renderMultiplayerHome(){
+  let body = `<button class="backBtn" onclick="backToRacefindr()">← BACK TO RACEFINDR</button>`;
+  body += `<div class="mpBox">
+    <h3>HEADS-UP LOBBY</h3>
+    <button class="buyBtn" style="margin-top:6px;" onclick="mpCreateLobby()">CREATE LOBBY</button>
+    <div class="mpDivider">— OR —</div>
+    <div class="mpJoinRow">
+      <input type="text" id="mpJoinCodeInput" placeholder="ENTER CODE" maxlength="5">
+      <button class="buyBtn" style="width:auto;padding:10px 20px;" onclick="mpJoinLobbyFromInput()">JOIN</button>
+    </div>
+    <div class="mpNote">Races another player over the internet in real time via a shared lobby — works from any device with this game open, not just two tabs on one computer.</div>
+  </div>`;
+  content.innerHTML = raceFrame(body);
+}
+
+function renderMultiplayerLobby(){
+  const data = mp.data;
+  if(!data){
+    let body = `<button class="backBtn" onclick="mpLeaveLobby()">← LEAVE</button><div class="mpBox"><p class="mpWaitingNote">Connecting to lobby...</p></div>`;
+    content.innerHTML = raceFrame(body, BOOKMARKS_SHOP);
+    return;
+  }
+  const isHost = mp.role==='host';
+  const myBet = isHost ? data.hostBet : data.guestBet;
+  const oppBet = isHost ? data.guestBet : data.hostBet;
+  const myReady = isHost ? data.hostReady : data.guestReady;
+  const oppReady = isHost ? data.guestReady : data.hostReady;
+
+  let body = `<button class="backBtn" onclick="mpLeaveLobby()">← LEAVE LOBBY</button>`;
+  body += `<div class="mpBox">
+    <h3>LOBBY CODE</h3>
+    <div class="mpCodeDisplay">${mp.code}</div>
+    <p style="color:var(--dim);font-size:11px;">Share this code with the other player so they can join from the Heads-Up Lobby screen.</p>
+  </div>`;
+
+  if(!data.guestJoined){
+    body += `<div class="mpBox"><p class="mpWaitingNote">Waiting for a second player to join with this code...</p></div>`;
+    content.innerHTML = raceFrame(body, BOOKMARKS_SHOP);
+    return;
+  }
+
+  const matched = myBet===oppBet;
+  body += `<div class="mpBox">
+    <div class="mpPlayerRow ${myReady?'ready':''}">
+      <span class="mpName">YOU (${isHost?'HOST':'GUEST'})</span>
+      <span class="mpStatus ${myReady?'ready':''}">${myReady?'READY':'NOT READY'}</span>
+    </div>
+    <div class="mpPlayerRow ${oppReady?'ready':''}">
+      <span class="mpName">OPPONENT</span>
+      <span class="mpStatus ${oppReady?'ready':''}">${oppReady?'READY':'NOT READY'}</span>
+    </div>
+    <div class="mpBetRow">
+      <span style="color:var(--dim);font-size:11px;">YOUR BET ($${MP_MIN_BET.toLocaleString()}–$${MP_MAX_BET.toLocaleString()})</span>
+      <input type="number" id="mpBetInput" value="${myBet}" min="${MP_MIN_BET}" max="${MP_MAX_BET}" step="100" onchange="mpSetBet(this.value)">
+    </div>
+    <div style="color:var(--dim);font-size:11px;margin-bottom:14px;">Opponent's bet: $${oppBet.toLocaleString()} — <span style="color:${matched?'var(--good)':'var(--bad)'};">${matched?'matched':'not matched yet'}</span></div>
+    <button class="buyBtn" onclick="mpToggleReady()">${myReady?'CANCEL READY':'READY UP'}</button>
+    <p class="mpWaitingNote">${(myReady && oppReady && matched) ? 'Both ready — starting shortly...' : 'Both players must ready up with matching bets to start.'}</p>
+  </div>`;
+  content.innerHTML = raceFrame(body, BOOKMARKS_SHOP);
+}
+
+function startMultiplayerRaceSequence(songId){
+  if(apRuntime.playing) apStopPlayback();
+  const car = state.cars.find(c=>c.currentProject);
+  const bet = mp.myBet;
+  if(state.cash < bet){ showToast("You can't afford this bet anymore."); mpLeaveLobby(); return; }
+  state.cash -= bet;
+  renderTopbar();
+
+  let songName, chart, totalSteps, stepDuration, scheduleFn;
+  if(songId === 'backlot_break'){
+    songName='BACKLOT BREAK'; chart=generateBacklotBreakChart(); totalSteps=BB_TOTAL_STEPS; stepDuration=BB_STEP_DURATION; scheduleFn=scheduleBacklotStep;
+  } else if(songId === 'night_circuit'){
+    songName='NIGHT CIRCUIT'; chart=generateNightCircuitChart(); totalSteps=NC_TOTAL_STEPS; stepDuration=NC_STEP_DURATION; scheduleFn=scheduleNightCircuitStep;
+  } else {
+    songName='REDLINE REQUIEM'; chart=generateRaceChart(); totalSteps=SONG_TOTAL_STEPS; stepDuration=SONG_STEP_DURATION; scheduleFn=scheduleRaceStep;
+  }
+
+  content.innerHTML = `
+    <div class="raceHud">
+      <span>${car?car.name:'You'} — WAGER $${bet.toLocaleString()}</span>
+      <span id="raceHudCombo" class="hudCombo">COMBO 0</span>
+      <span id="raceHudAcc" class="hudAcc">ACC 100%</span>
+      <span>HEADS-UP · ${songName}</span>
+    </div>
+    <div id="raceScreen">
+      <div class="raceHighwayWrap">
+        <canvas id="raceNoteCanvas" width="700" height="560"></canvas>
+        <div id="raceCountdownOverlay" class="raceCountdownOverlay"></div>
+        <div id="raceResultOverlayEl" class="raceResultOverlay" style="display:none;"></div>
+      </div>
+    </div>
+    <div class="raceVizWrap"><canvas id="raceVizCanvas" width="1200" height="60"></canvas></div>
+    <div class="raceControlsHint">${songName} — WASD or ARROW KEYS — hit each note as it crosses the bar</div>
+  `;
+
+  raceRuntime = {
+    ctx:null, masterGain:null,
+    chart, currentStep:0, nextStepTime:0, schedulerTimer:null, totalSteps, stepDuration, scheduleFn,
+    raceStartTime:0, songDuration: totalSteps*stepDuration,
+    judged:0, score:0, combo:0, maxCombo:0,
+    perfectWindow:0.075, goodWindow:0.15, noteTravelTime:1.2,
+    isMultiplayer:true, bet, waitingForOpponent:false,
+    ended:false, animFrameId:null, keydownHandler:null,
+  };
+
+  raceRuntime.ctx = ensureAudioContext();
+  raceRuntime.masterGain = audioMasterGain;
+
+  const COUNTDOWN_SECONDS = 3;
+  raceRuntime.raceStartTime = raceRuntime.ctx.currentTime + COUNTDOWN_SECONDS;
+  raceRuntime.nextStepTime = raceRuntime.raceStartTime;
+
+  raceRuntime.keydownHandler = handleRaceKeydown;
+  document.addEventListener('keydown', raceRuntime.keydownHandler);
+
+  runRaceCountdown(COUNTDOWN_SECONDS);
+  raceRuntime.animFrameId = requestAnimationFrame(raceAnimLoop);
+}
+
 function renderOpponentSelect(){
   const site = RACE_SITES[state.races.siteIdx];
   const type = RACE_TYPES.find(t=>t.key===state.races.raceType);
@@ -3166,19 +4489,21 @@ function renderOpponentSelect(){
   body += `<div class="opponentGrid">`;
   OPPONENT_DIFFICULTIES.forEach(diff=>{
     const power = Math.round(avgPowerForTier(site.tier) * diff.mult);
+    const diffPayout = Math.round(payout * diff.payoutMult);
     const name = RIVAL_NAMES[Math.floor(Math.random()*RIVAL_NAMES.length)];
-    body += `<div class="opponentCard" onclick="confirmStartRace('${diff.key}', ${power}, '${jsAttrEscape(name)}')">
+    body += `<div class="opponentCard" onclick="confirmStartRace('${diff.key}', ${power}, '${jsAttrEscape(name)}', ${diff.payoutMult})">
       <div class="opName">${name}</div>
       <div class="opDiff">${diff.label}</div>
       <div class="opPwr">PWR ${power}</div>
       <div class="opVs">vs your ${playerPower}</div>
+      <div class="opVs">Payout: $${diffPayout.toLocaleString()}</div>
     </div>`;
   });
   body += `</div>`;
   content.innerHTML = raceFrame(body, BOOKMARKS_SHOP);
 }
 
-function confirmStartRace(diffKey, opponentPower, opponentName){
+function confirmStartRace(diffKey, opponentPower, opponentName, payoutMult){
   const site = RACE_SITES[state.races.siteIdx];
   const type = RACE_TYPES.find(t=>t.key===state.races.raceType);
   const buyIn = Math.round(type.buyInBase * site.tier);
@@ -3186,7 +4511,7 @@ function confirmStartRace(diffKey, opponentPower, opponentName){
   const car = state.cars.find(c=>c.currentProject);
   if(!car || car.potential !== site.tier) return;
   state.cash -= buyIn;
-  state.races.opponent = { key:diffKey, power:opponentPower, name:opponentName };
+  state.races.opponent = { key:diffKey, power:opponentPower, name:opponentName, payoutMult:payoutMult||1 };
   state.races.view = 'race';
   renderTopbar();
   startRaceSequence(car, site, type, buyIn);
@@ -3194,14 +4519,23 @@ function confirmStartRace(diffKey, opponentPower, opponentName){
 
 /* ---------------- The race screen itself ---------------- */
 function startRaceSequence(car, site, type, buyIn){
-  const payout = Math.round(buyIn * type.payoutMult);
+  if(apRuntime.playing) apStopPlayback();
+  const payout = Math.round(buyIn * type.payoutMult * (state.races.opponent.payoutMult||1));
   const playerPower = getCarPower(car);
   const opponentPower = state.races.opponent.power;
   const diffFactor = Math.max(-1, Math.min(1, (opponentPower-playerPower)/400));
   const perfectWindow = Math.max(0.045, 0.09 - diffFactor*0.03);
   const goodWindow = Math.max(0.09, 0.18 - diffFactor*0.04);
   const requiredAccuracy = Math.max(0.15, Math.min(0.85, 0.5 + diffFactor*0.3));
-  const chart = generateRaceChart();
+
+  // Each tier/race-type combo runs its own song, its own chart, and its own tempo/step-length.
+  const songId = TIER_RACE_SONGS[site.tier][type.key];
+  const engine = SONG_ENGINES[songId];
+  const songName = engine.name;
+  const chart = engine.chart();
+  const totalSteps = engine.totalSteps();
+  const stepDuration = engine.stepDuration();
+  const scheduleFn = engine.scheduleFn;
 
   content.innerHTML = `
     <button class="backBtn" onclick="forfeitRace()">← FORFEIT RACE</button>
@@ -3211,33 +4545,30 @@ function startRaceSequence(car, site, type, buyIn){
       <span id="raceHudAcc" class="hudAcc">ACC 100%</span>
       <span>${state.races.opponent.name} — PWR ${opponentPower}</span>
     </div>
-    <div class="raceTrackWrap"><canvas id="raceTrackCanvas" width="1200" height="150"></canvas></div>
     <div id="raceScreen">
       <div class="raceHighwayWrap">
-        <canvas id="raceNoteCanvas" width="560" height="420"></canvas>
+        <canvas id="raceNoteCanvas" width="700" height="560"></canvas>
         <div id="raceCountdownOverlay" class="raceCountdownOverlay"></div>
         <div id="raceResultOverlayEl" class="raceResultOverlay" style="display:none;"></div>
       </div>
     </div>
-    <div class="raceControlsHint">WASD or ARROW KEYS — hit each note as it crosses the bar</div>
+    <div class="raceVizWrap"><canvas id="raceVizCanvas" width="1200" height="60"></canvas></div>
+    <div class="raceControlsHint">${songName} — WASD or ARROW KEYS — hit each note as it crosses the bar</div>
   `;
 
   raceRuntime = {
     ctx:null, masterGain:null,
-    chart, currentStep:0, nextStepTime:0, schedulerTimer:null,
-    raceStartTime:0, songDuration: SONG_TOTAL_STEPS*SONG_STEP_DURATION,
+    chart, currentStep:0, nextStepTime:0, schedulerTimer:null, totalSteps, stepDuration, scheduleFn,
+    raceStartTime:0, songDuration: totalSteps*stepDuration,
     judged:0, score:0, combo:0, maxCombo:0,
     perfectWindow, goodWindow, noteTravelTime:1.2,
     playerPower, opponentPower, opponent: state.races.opponent,
     car, site, type, buyIn, payout, requiredAccuracy,
-    playerProgress:0, rivalProgress:0,
     ended:false, animFrameId:null, keydownHandler:null,
   };
 
-  raceRuntime.ctx = new (window.AudioContext||window.webkitAudioContext)();
-  raceRuntime.masterGain = raceRuntime.ctx.createGain();
-  raceRuntime.masterGain.gain.value = 0.8;
-  raceRuntime.masterGain.connect(raceRuntime.ctx.destination);
+  raceRuntime.ctx = ensureAudioContext();
+  raceRuntime.masterGain = audioMasterGain;
 
   const COUNTDOWN_SECONDS = 3;
   raceRuntime.raceStartTime = raceRuntime.ctx.currentTime + COUNTDOWN_SECONDS;
@@ -3277,16 +4608,32 @@ function handleRaceKeydown(e){
   judgeRaceHit(lane);
 }
 
+const MASH_COOLDOWN = 0.1; // seconds — presses in the same lane faster than this are ignored outright
+const MASH_PENALTY = 1;    // score deducted per wasted press, mirrors the value of a GOOD hit
+
 function judgeRaceHit(lane){
   const rr = raceRuntime;
   const songTime = rr.ctx.currentTime - rr.raceStartTime;
+
+  if(!rr.lastPressTime) rr.lastPressTime = [-1,-1,-1,-1];
+  if(songTime - rr.lastPressTime[lane] < MASH_COOLDOWN) return; // faster than any real tap — ignore
+  rr.lastPressTime[lane] = songTime;
+
   let best = null, bestDelta = Infinity;
   rr.chart.forEach(note=>{
     if(note.hit || note.missed || note.lane!==lane) return;
     const delta = Math.abs(note.time - songTime);
     if(delta < bestDelta){ bestDelta = delta; best = note; }
   });
-  if(!best || bestDelta > rr.goodWindow) return;
+  if(!best || bestDelta > rr.goodWindow){
+    // Wasted press — breaks combo and costs score, so spamming keys is a net loss
+    // rather than a free way to guarantee every note gets hit.
+    rr.combo = 0;
+    rr.score = Math.max(0, rr.score - MASH_PENALTY);
+    flashJudgment('MISS');
+    updateRaceHud();
+    return;
+  }
   best.hit = true;
   rr.judged++;
   if(bestDelta <= rr.perfectWindow){
@@ -3334,13 +4681,31 @@ function raceAnimLoop(){
   });
 
   drawRaceHighway(songTime);
-  updateRaceProgressAndTrack(songTime);
+  drawRaceVisualizer();
 
   if(songTime >= rr.songDuration + 0.4 && !rr.ended){
-    finishRace();
+    if(rr.isMultiplayer) finishMultiplayerRace(); else finishRace();
     return;
   }
   rr.animFrameId = requestAnimationFrame(raceAnimLoop);
+}
+
+function drawRaceVisualizer(){
+  const canvas = document.getElementById('raceVizCanvas');
+  if(!canvas || !audioAnalyser) return;
+  const ctx2 = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx2.clearRect(0,0,W,H);
+  const data = new Uint8Array(audioAnalyser.frequencyBinCount);
+  audioAnalyser.getByteFrequencyData(data);
+  const barCount = 60;
+  const barW = W/barCount;
+  for(let i=0;i<barCount;i++){
+    const v = data[Math.floor(i*data.length/barCount)] || 0;
+    const barH = Math.max(2, (v/255)*H);
+    ctx2.fillStyle = '#f2b705';
+    ctx2.fillRect(i*barW+1, H-barH, barW-2, barH);
+  }
 }
 
 function drawRaceHighway(songTime){
@@ -3392,57 +4757,6 @@ function drawRaceHighway(songTime){
   });
 }
 
-function drawCarSprite(ctx2, x, y, color){
-  ctx2.fillStyle = color;
-  ctx2.fillRect(x, y-8, 34, 14);
-  ctx2.fillStyle = '#12140d';
-  ctx2.fillRect(x+8, y-14, 14, 8);
-  ctx2.fillStyle = '#000';
-  ctx2.fillRect(x+2, y+4, 6, 6);
-  ctx2.fillRect(x+24, y+4, 6, 6);
-}
-
-function drawRaceTrack(){
-  const canvas = document.getElementById('raceTrackCanvas');
-  if(!canvas || !raceRuntime) return;
-  const rr = raceRuntime;
-  const ctx2 = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  ctx2.fillStyle = '#12140d';
-  ctx2.fillRect(0,0,W,H*0.4);
-  ctx2.fillStyle = '#1a1c15';
-  ctx2.fillRect(0,H*0.4,W,H*0.6);
-
-  const dashOffset = (performance.now()/8) % 40;
-  ctx2.strokeStyle = '#3a3d33';
-  ctx2.lineWidth = 3;
-  ctx2.setLineDash([20,20]);
-  ctx2.lineDashOffset = -dashOffset;
-  ctx2.beginPath(); ctx2.moveTo(0,H*0.7); ctx2.lineTo(W,H*0.7); ctx2.stroke();
-  ctx2.setLineDash([]);
-
-  const trackStartX = 40, trackEndX = W-70;
-  for(let i=0;i<6;i++){
-    ctx2.fillStyle = i%2===0 ? '#e8e6de' : '#1a1a1a';
-    ctx2.fillRect(trackEndX, H*0.4 + i*(H*0.6/6), 12, H*0.6/6);
-  }
-
-  const range = trackEndX-trackStartX-30;
-  const playerX = trackStartX + rr.playerProgress*range;
-  const rivalX = trackStartX + rr.rivalProgress*range;
-  drawCarSprite(ctx2, rivalX, H*0.55, '#c0392b');
-  drawCarSprite(ctx2, playerX, H*0.78, '#f2b705');
-}
-
-function updateRaceProgressAndTrack(songTime){
-  const rr = raceRuntime;
-  const elapsedFrac = Math.max(0, Math.min(1, songTime/rr.songDuration));
-  const liveAccuracy = rr.judged>0 ? (rr.score/(rr.judged*3)) : 1;
-  rr.playerProgress = elapsedFrac * liveAccuracy;
-  rr.rivalProgress = elapsedFrac * rr.requiredAccuracy;
-  drawRaceTrack();
-}
-
 function finishRace(){
   const rr = raceRuntime;
   if(!rr || rr.ended) return;
@@ -3455,21 +4769,90 @@ function finishRace(){
 
   const finalAccuracy = rr.judged>0 ? rr.score/(rr.judged*3) : 0;
   const win = finalAccuracy >= rr.requiredAccuracy;
+  showRaceResult(win, finalAccuracy);
+}
 
-  const startPlayer = rr.playerProgress, startRival = rr.rivalProgress;
-  const finalPlayer = win ? 1.05 : Math.min(rr.playerProgress, rr.requiredAccuracy-0.05);
-  const finalRival = win ? Math.min(rr.rivalProgress, rr.requiredAccuracy-0.05) : 1.05;
-  const t0 = performance.now();
-  function sprint(){
-    if(!raceRuntime) return;
-    const p = Math.min(1, (performance.now()-t0)/1200);
-    rr.playerProgress = startPlayer + (finalPlayer-startPlayer)*p;
-    rr.rivalProgress = startRival + (finalRival-startRival)*p;
-    drawRaceTrack();
-    if(p<1) requestAnimationFrame(sprint);
-    else showRaceResult(win, finalAccuracy);
+// Heads-up races don't have a live opponent feed to race against — instead, each side
+// submits its final accuracy to the shared lobby record and waits for the other side
+// to finish, then both tabs independently compute the same outcome from that record.
+function finishMultiplayerRace(){
+  const rr = raceRuntime;
+  if(!rr || rr.ended) return;
+  rr.ended = true;
+  clearInterval(rr.schedulerTimer);
+
+  rr.chart.forEach(note=>{
+    if(!note.hit && !note.missed){ note.missed = true; rr.judged++; }
+  });
+  const finalAccuracy = rr.judged>0 ? rr.score/(rr.judged*3) : 0;
+  rr.waitingForOpponent = true;
+
+  const accField = mp.role==='host' ? 'hostAccuracy' : 'guestAccuracy';
+  const doneField = mp.role==='host' ? 'hostDone' : 'guestDone';
+  if(mpDb && mp.code){
+    mpLobbyRef(mp.code).update({ [accField]: finalAccuracy, [doneField]: true }).then(()=>{
+      return mpLobbyRef(mp.code).once('value');
+    }).then(snap=>{
+      const d = snap.val();
+      if(d && d.hostDone && d.guestDone && d.status!=='finished'){
+        mpLobbyRef(mp.code).child('status').set('finished');
+      }
+    }).catch(e=>console.warn('Score submit failed', e));
   }
-  sprint();
+
+  const overlay = document.getElementById('raceResultOverlayEl');
+  if(overlay){
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="rrTitle">RACE COMPLETE</div>
+      <div class="rrLine">Your accuracy: <b>${Math.round(finalAccuracy*100)}%</b></div>
+      <div class="rrLine">Max Combo: <b>${rr.maxCombo}</b></div>
+      <div class="mpWaitingNote" id="mpWaitingLine">Waiting for the other player to finish...</div>
+    `;
+  }
+
+  // NOTE: mp.raceLaunched intentionally stays true here — resetting it while the lobby
+  // record still shows status:'starting' would cause the next write (the opponent
+  // submitting their score) to re-trigger a fresh race launch mid-finalization.
+}
+
+function mpFinalizeResult(data){
+  const rr = raceRuntime;
+  const myAcc = mp.role==='host' ? data.hostAccuracy : data.guestAccuracy;
+  const oppAcc = mp.role==='host' ? data.guestAccuracy : data.hostAccuracy;
+  const bet = rr ? rr.bet : mp.myBet;
+  const pool = bet*2;
+
+  let outcome;
+  if(myAcc > oppAcc){ outcome='win'; state.cash += pool; }
+  else if(myAcc < oppAcc){ outcome='lose'; }
+  else { outcome='tie'; state.cash += bet; } // push — refund the wager
+  renderTopbar();
+
+  const overlay = document.getElementById('raceResultOverlayEl');
+  if(overlay){
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <div class="rrTitle ${outcome==='lose'?'lose':'win'}">${outcome==='win'?'YOU WIN':outcome==='lose'?'YOU LOSE':'TIE — PUSH'}</div>
+      <div class="rrLine">Your accuracy: <b>${Math.round(myAcc*100)}%</b></div>
+      <div class="rrLine">Opponent accuracy: <b>${Math.round(oppAcc*100)}%</b></div>
+      ${outcome==='win' ? `<div class="rrLine">Won pool: <b>+$${pool.toLocaleString()}</b></div>` : ''}
+      ${outcome==='lose' ? `<div class="rrLine">Wager lost: <b>-$${bet.toLocaleString()}</b></div>` : ''}
+      ${outcome==='tie' ? `<div class="rrLine">Wager refunded: <b>$${bet.toLocaleString()}</b></div>` : ''}
+      <button class="closeModal" style="margin-top:16px;width:auto;padding:10px 24px;" onclick="mpExitToRacefindr()">CONTINUE</button>
+    `;
+  }
+  state.races.view = 'result';
+}
+
+function mpExitToRacefindr(){
+  stopRaceAudio();
+  if(mp.code && mpDb) mpLobbyRef(mp.code).remove().catch(()=>{});
+  mpDetachListener();
+  raceRuntime = null;
+  mp = { code:null, role:null, myBet:1000, raceLaunched:false, resultShown:false, data:null, ref:null, listenerAttached:false };
+  state.races.view = 'home';
+  render();
 }
 
 function showRaceResult(win, finalAccuracy){
@@ -3506,7 +4889,8 @@ function stopRaceAudio(){
   clearInterval(raceRuntime.schedulerTimer);
   if(raceRuntime.animFrameId) cancelAnimationFrame(raceRuntime.animFrameId);
   if(raceRuntime.keydownHandler) document.removeEventListener('keydown', raceRuntime.keydownHandler);
-  if(raceRuntime.ctx){ try{ raceRuntime.ctx.close(); }catch(e){} }
+  // NOTE: the shared audioCtx is intentionally left open — the background Audio Player
+  // may still want it, and creating a fresh context per race is wasteful anyway.
 }
 function forfeitRace(){
   if(raceRuntime && !raceRuntime.ended){
