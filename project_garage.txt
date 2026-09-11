@@ -906,6 +906,11 @@ const CAR_IMAGES = {
   '\'98 Eclipse GSX': 'eclipse-98-gsx.jpg',
   '\'88 Tercel': 'tercel-88.jpg',
   '\'90 Sentra': 'sentra-90.jpg',
+  '\'02 240SX': '240sx-02.jpg',
+  '\'01 Prelude': 'prelude-01.jpg',
+  '\'99 Civic Si': 'civic-99-si.jpg',
+  '\'89 Mustang GT': 'mustang-89.jpg',
+  '\'95 Miata': 'miata-95.jpg',
 };
 
 // Market buyers — wide pool of car-culture usernames, plus two rare easter-egg buyers.
